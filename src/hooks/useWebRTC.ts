@@ -28,17 +28,28 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const socketRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<Map<string, Peer>>(new Map());
 
+  // تم تعديل هذا الجزء فقط
   const iceServers = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
+
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
     ],
   };
 
   useEffect(() => {
     if (localStream) {
       peersRef.current.forEach(peer => {
-        // Only add tracks if they haven't been added yet
         const senders = peer.connection.getSenders();
         localStream.getTracks().forEach(track => {
           const alreadyAdded = senders.some(s => s.track?.id === track.id);
@@ -66,17 +77,21 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
         case 'user-joined':
           await createPeer(message.userId, message.username, message.displayName, message.avatar, true);
           break;
+
         case 'room-users':
           for (const user of message.users) {
             await createPeer(user.userId, user.username, user.displayName, user.avatar, false);
           }
           break;
+
         case 'signal':
           await handleSignal(message.senderId, message.signal);
           break;
+
         case 'user-left':
           removePeer(message.userId);
           break;
+
         case 'chat':
           setMessages(prev => [...prev, {
             text: message.text,
@@ -87,6 +102,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
             timestamp: message.timestamp
           }]);
           break;
+
         case 'mute-status':
           setPeers(prev => {
             const newPeers = new Map<string, Peer>(prev);
@@ -97,6 +113,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
             return newPeers;
           });
           break;
+
         case 'profile-update':
           setPeers(prev => {
             const newPeers = new Map<string, Peer>(prev);
@@ -165,7 +182,16 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   };
 
   const createPeer = async (targetId: string, targetUsername: string, targetDisplayName: string, targetAvatar: string | undefined, isInitiator: boolean) => {
+
     const pc = new RTCPeerConnection(iceServers);
+
+    pc.onconnectionstatechange = () => {
+      console.log("Connection state:", pc.connectionState);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log("ICE state:", pc.iceConnectionState);
+    };
 
     const peer: Peer = {
       userId: targetId,
@@ -173,7 +199,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       displayName: targetDisplayName,
       avatar: targetAvatar,
       connection: pc,
-      isMuted: false // Default to false, will be updated by mute-status
+      isMuted: false
     };
 
     pc.onicecandidate = (event) => {
@@ -198,7 +224,6 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       });
     };
 
-    // Add local tracks if available
     if (localStream) {
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
     }
@@ -206,6 +231,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     if (isInitiator) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+
       socketRef.current?.send(JSON.stringify({
         type: 'signal',
         targetId,
@@ -224,9 +250,11 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     if (signal.sdp) {
       await peer.connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+
       if (signal.sdp.type === 'offer') {
         const answer = await peer.connection.createAnswer();
         await peer.connection.setLocalDescription(answer);
+
         socketRef.current?.send(JSON.stringify({
           type: 'signal',
           targetId: senderId,
@@ -234,6 +262,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
           signal: { sdp: answer }
         }));
       }
+
     } else if (signal.candidate) {
       await peer.connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
     }
@@ -241,6 +270,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const removePeer = (targetId: string) => {
     const peer = peersRef.current.get(targetId);
+
     if (peer) {
       peer.connection.close();
       peersRef.current.delete(targetId);
@@ -249,18 +279,26 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   };
 
   const toggleMedia = async (type: 'audio' | 'video') => {
+
     if (!localStream) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+
       setLocalStream(stream);
+
       peersRef.current.forEach(peer => {
         stream.getTracks().forEach(track => peer.connection.addTrack(track, stream));
       });
+
       return;
     }
 
-    const track = type === 'audio' ? localStream.getAudioTracks()[0] : localStream.getVideoTracks()[0];
+    const track = type === 'audio'
+      ? localStream.getAudioTracks()[0]
+      : localStream.getVideoTracks()[0];
+
     if (track) {
       track.enabled = !track.enabled;
+
       if (type === 'audio') {
         sendMuteStatus(!track.enabled);
       }
@@ -269,48 +307,66 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const startScreenShare = async () => {
     try {
-      // Some browsers/OS don't support system audio sharing, so we handle it gracefully
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
-        video: true, 
-        audio: true 
+
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true
       }).catch(() => {
-        // Fallback to video only if audio sharing is rejected or unsupported
         return navigator.mediaDevices.getDisplayMedia({ video: true });
       });
 
       setIsScreenSharing(true);
+
       const videoTrack = screenStream.getVideoTracks()[0];
-      
+
       peersRef.current.forEach(peer => {
-        const sender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
+
+        const sender = peer.connection.getSenders().find(
+          s => s.track?.kind === 'video'
+        );
+
         if (sender) {
           sender.replaceTrack(videoTrack);
         }
+
       });
 
       videoTrack.onended = () => stopScreenShare();
-      
+
       return screenStream;
+
     } catch (err: any) {
+
       if (err.name === 'NotAllowedError') {
         console.warn("Screen sharing was cancelled by the user.");
       } else {
         console.error("Error sharing screen:", err);
       }
+
       setIsScreenSharing(false);
+
       return null;
     }
   };
 
   const stopScreenShare = async () => {
+
     if (!localStream) return;
+
     const videoTrack = localStream.getVideoTracks()[0];
+
     peersRef.current.forEach(peer => {
-      const sender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
+
+      const sender = peer.connection.getSenders().find(
+        s => s.track?.kind === 'video'
+      );
+
       if (sender) {
         sender.replaceTrack(videoTrack);
       }
+
     });
+
     setIsScreenSharing(false);
   };
 
