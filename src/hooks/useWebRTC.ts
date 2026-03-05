@@ -21,7 +21,22 @@ export function useWebRTC(roomId: string, userId: string, username: string) {
     ],
   };
 
+  // Initialize local media
   useEffect(() => {
+    const initMedia = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        setLocalStream(stream);
+      } catch (err) {
+        console.error("Error accessing media devices:", err);
+      }
+    };
+    initMedia();
+  }, []);
+
+  // Connect to signaling server
+  useEffect(() => {
+    if (!localStream) return; // wait for localStream
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${protocol}//${window.location.host}`);
     socketRef.current = socket;
@@ -32,7 +47,6 @@ export function useWebRTC(roomId: string, userId: string, username: string) {
 
     socket.onmessage = async (event) => {
       const message = JSON.parse(event.data);
-
       switch (message.type) {
         case 'user-joined':
           await createPeer(message.userId, message.username, true);
@@ -55,16 +69,14 @@ export function useWebRTC(roomId: string, userId: string, username: string) {
       socket.close();
       peersRef.current.forEach(peer => peer.connection.close());
     };
-  }, [roomId, userId]);
+  }, [localStream]); // wait until localStream ready
 
   const createPeer = async (targetId: string, targetUsername: string, isInitiator: boolean) => {
+    if (!localStream) return;
+
     const pc = new RTCPeerConnection(iceServers);
 
-    const peer: Peer = {
-      userId: targetId,
-      username: targetUsername,
-      connection: pc
-    };
+    const peer: Peer = { userId: targetId, username: targetUsername, connection: pc };
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -79,19 +91,16 @@ export function useWebRTC(roomId: string, userId: string, username: string) {
 
     pc.ontrack = (event) => {
       setPeers(prev => {
-        const newPeers = new Map<string, Peer>(prev);
+        const newPeers = new Map(prev);
         const existing = newPeers.get(targetId);
-        if (existing) {
-          existing.stream = event.streams[0];
-        }
+        if (existing) existing.stream = event.streams[0];
+        else newPeers.set(targetId, { ...peer, stream: event.streams[0] });
         return newPeers;
       });
     };
 
-    // Add local tracks if available
-    if (localStream) {
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-    }
+    // Add all local tracks
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     if (isInitiator) {
       const offer = await pc.createOffer();
@@ -138,53 +147,37 @@ export function useWebRTC(roomId: string, userId: string, username: string) {
     }
   };
 
-  const toggleMedia = async (type: 'audio' | 'video') => {
-    if (!localStream) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      setLocalStream(stream);
-      peersRef.current.forEach(peer => {
-        stream.getTracks().forEach(track => peer.connection.addTrack(track, stream));
-      });
-      return;
-    }
-
+  const toggleMedia = (type: 'audio' | 'video') => {
+    if (!localStream) return;
     const track = type === 'audio' ? localStream.getAudioTracks()[0] : localStream.getVideoTracks()[0];
-    if (track) {
-      track.enabled = !track.enabled;
-    }
+    if (track) track.enabled = !track.enabled;
   };
 
   const startScreenShare = async () => {
+    if (!localStream) return;
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       setIsScreenSharing(true);
 
       const videoTrack = screenStream.getVideoTracks()[0];
-      
+
       peersRef.current.forEach(peer => {
         const sender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
-        if (sender) {
-          sender.replaceTrack(videoTrack);
-        }
+        if (sender) sender.replaceTrack(videoTrack);
       });
 
-      videoTrack.onended = () => stopScreenShare();
-      
-      // Update local preview if needed
-      // For now we just replace the track in peers
+      videoTrack.onended = stopScreenShare;
     } catch (err) {
       console.error("Error sharing screen:", err);
     }
   };
 
-  const stopScreenShare = async () => {
+  const stopScreenShare = () => {
     if (!localStream) return;
     const videoTrack = localStream.getVideoTracks()[0];
     peersRef.current.forEach(peer => {
       const sender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
-      if (sender) {
-        sender.replaceTrack(videoTrack);
-      }
+      if (sender) sender.replaceTrack(videoTrack);
     });
     setIsScreenSharing(false);
   };
