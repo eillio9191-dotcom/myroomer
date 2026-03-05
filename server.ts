@@ -13,8 +13,8 @@ async function startServer() {
 
   // Room state: roomId -> Set of WebSockets
   const rooms = new Map<string, Set<WebSocket>>();
-  // Socket metadata: WebSocket -> { roomId, userId, username }
-  const socketInfo = new Map<WebSocket, { roomId: string; userId: string; username: string }>();
+  // Socket metadata: WebSocket -> { roomId, userId, username, displayName, avatar }
+  const socketInfo = new Map<WebSocket, { roomId: string; userId: string; username: string; displayName: string; avatar?: string }>();
 
   wss.on("connection", (ws) => {
     console.log("New connection");
@@ -24,7 +24,7 @@ async function startServer() {
 
       switch (message.type) {
         case "join": {
-          const { roomId, userId, username } = message;
+          const { roomId, userId, username, displayName, avatar } = message;
           
           // Leave previous room if any
           const oldInfo = socketInfo.get(ws);
@@ -37,7 +37,7 @@ async function startServer() {
             rooms.set(roomId, new Set());
           }
           rooms.get(roomId)!.add(ws);
-          socketInfo.set(ws, { roomId, userId, username });
+          socketInfo.set(ws, { roomId, userId, username, displayName, avatar });
 
           // Notify others in the room
           rooms.get(roomId)!.forEach((client) => {
@@ -45,7 +45,9 @@ async function startServer() {
               client.send(JSON.stringify({
                 type: "user-joined",
                 userId,
-                username
+                username,
+                displayName,
+                avatar
               }));
             }
           });
@@ -80,6 +82,69 @@ async function startServer() {
               signal
             }));
           }
+          break;
+        }
+
+        case "chat": {
+          const { text, senderId, username, displayName, avatar, timestamp } = message;
+          const info = socketInfo.get(ws);
+          if (!info) return;
+
+          // Broadcast to everyone in the room
+          rooms.get(info.roomId)?.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: "chat",
+                text,
+                senderId,
+                username,
+                displayName,
+                avatar,
+                timestamp
+              }));
+            }
+          });
+          break;
+        }
+
+        case "mute-status": {
+          const { senderId, isMuted } = message;
+          const info = socketInfo.get(ws);
+          if (!info) return;
+
+          // Broadcast to everyone in the room
+          rooms.get(info.roomId)?.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: "mute-status",
+                senderId,
+                isMuted
+              }));
+            }
+          });
+          break;
+        }
+
+        case "profile-update": {
+          const { senderId, displayName, avatar } = message;
+          const info = socketInfo.get(ws);
+          if (!info) return;
+
+          // Update local state
+          info.displayName = displayName;
+          info.avatar = avatar;
+
+          // Broadcast to everyone in the room
+          rooms.get(info.roomId)?.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: "profile-update",
+                senderId,
+                displayName,
+                avatar
+              }));
+            }
+          });
           break;
         }
       }
