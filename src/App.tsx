@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Video, VideoOff, Mic, MicOff, Monitor, MonitorOff, 
-  LogOut, Users, Settings, MessageSquare, Plus, Hash,
+  LogOut, Users, Settings, MessageSquare, Plus, Hash, Globe,
   Copy, Check, Shield, X, Send, Volume2, VolumeX, Bell, BellOff,
   Sun, Moon, Upload, ArrowLeft, User as UserIcon,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, Search, Phone, UserMinus, CheckCircle2, Trash2
 } from 'lucide-react';
 import { useWebRTC, Peer, ChatMessage } from './hooks/useWebRTC';
 import { useAudioActivity } from './hooks/useAudioActivity';
@@ -23,6 +23,7 @@ interface User {
   avatar: string;
   theme: 'light' | 'dark';
   language: 'en' | 'ar';
+  ownedRooms?: string[];
 }
 
 const TRANSLATIONS = {
@@ -72,11 +73,39 @@ const TRANSLATIONS = {
     muteAllSub: "Silence all incoming audio",
     sounds: "Sound Effects",
     soundsSub: "Join, leave, and message sounds",
-    done: "Done"
+    done: "Done",
+    quality: "Video Quality",
+    qualitySub: "Adjust resolution and bitrate",
+    searchUser: "Search for a user...",
+    call: "Call",
+    message: "Message",
+    preJoin: "Pre-join Settings",
+    joinNow: "Join Now",
+    waitingApproval: "Waiting for owner approval...",
+    lobby: "Lobby",
+    approve: "Approve",
+    reject: "Reject",
+    kick: "Kick",
+    deleteRoom: "Delete Room",
+    ownedRooms: "My Rooms",
+    noOwnedRooms: "You haven't created any rooms yet.",
+    incomingCall: "Incoming Call",
+    accept: "Accept",
+    roomTag: "Room Tag",
+    enterRoomTag: "Enter Room Tag (e.g. Family, Work)",
+    homeSub: "Connect with your friends and family in secure and private rooms",
+    globalSearch: "Search for People",
+    userInfo: "User Information",
+    search: "Search",
+    autoAccept: "Auto-accept all",
+    autoReject: "Auto-reject all",
+    autoAcceptSub: "Automatically approve all join requests",
+    autoRejectSub: "Automatically reject all join requests",
+    confirmDelete: "Are you sure you want to delete this room?",
   },
   ar: {
     room: "الغرفة",
-    myRoomer: "ماي رومر",
+    myRoomer: "MyRoomer",
     connected: "متصل",
     copyLink: "نسخ رابط الغرفة",
     createRoom: "إنشاء غرفة",
@@ -95,7 +124,7 @@ const TRANSLATIONS = {
     langPref: "تفضيل اللغة",
     langSub: "اختر لغتك المفضلة",
     saveChanges: "حفظ التغييرات",
-    loginTitle: "تسجيل الدخول إلى ماي رومر",
+    loginTitle: "Login to MyRoomer",
     loginSub: "أدخل بياناتك للمتابعة",
     username: "اسم المستخدم",
     password: "كلمة المرور",
@@ -120,7 +149,35 @@ const TRANSLATIONS = {
     muteAllSub: "إسكات جميع الأصوات الواردة",
     sounds: "تأثيرات صوتية",
     soundsSub: "أصوات الانضمام والمغادرة والرسائل",
-    done: "تم"
+    done: "تم",
+    quality: "جودة الفيديو",
+    qualitySub: "ضبط الدقة ومعدل البت",
+    searchUser: "البحث عن مستخدم...",
+    call: "اتصال",
+    message: "رسالة",
+    preJoin: "إعدادات ما قبل الانضمام",
+    joinNow: "انضم الآن",
+    waitingApproval: "بانتظار موافقة المالك...",
+    lobby: "غرفة الانتظار",
+    approve: "قبول",
+    reject: "رفض",
+    kick: "طرد",
+    deleteRoom: "حذف الغرفة",
+    ownedRooms: "غرفي",
+    noOwnedRooms: "لم تقم بإنشاء أي غرف بعد.",
+    incomingCall: "مكالمة واردة",
+    accept: "قبول",
+    roomTag: "وسم الغرفة",
+    enterRoomTag: "أدخل وسم الغرفة (مثل: العائلة، العمل)",
+    homeSub: "تواصل مع أصدقائك وعائلتك في غرف آمنة وخاصة",
+    globalSearch: "البحث عن الأشخاص",
+    userInfo: "معلومات المستخدم",
+    search: "بحث",
+    autoAccept: "قبول تلقائي للجميع",
+    autoReject: "رفض تلقائي للجميع",
+    autoAcceptSub: "الموافقة تلقائياً على جميع طلبات الانضمام",
+    autoRejectSub: "رفض تلقائياً جميع طلبات الانضمام",
+    confirmDelete: "هل أنت متأكد أنك تريد حذف هذه الغرفة؟",
   }
 };
 
@@ -133,7 +190,15 @@ export default function App() {
   const [isJoined, setIsJoined] = useState(false);
   const [soundsEnabled, setSoundsEnabled] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [roomInput, setRoomInput] = useState('');
+  const [roomTagInput, setRoomTagInput] = useState('');
+  const [roomTag, setRoomTag] = useState('');
+
+  // Top-level signaling for incoming calls
+  const { 
+    incomingCall, setIncomingCall, directCall 
+  } = useWebRTC(roomId || 'lobby', user?.username || USER_ID, user?.username || '', user?.displayName || '', user?.avatar);
 
   // Apply theme and language to body
   useEffect(() => {
@@ -157,28 +222,15 @@ export default function App() {
     }
   }, []);
 
-  const handleLogin = (username: string, displayName: string, avatar: string) => {
-    setUser({ username, displayName, avatar, theme: 'dark', language: 'en' });
-  };
-
-  const handleJoin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    
-    const finalRoomId = roomId || Math.random().toString(36).substring(7);
-    setRoomId(finalRoomId);
-    window.history.pushState({}, '', `?room=${finalRoomId}`);
-    setIsJoined(true);
-  };
-
   if (!user) {
-    return <LoginView onLogin={handleLogin} language="en" />;
+    return <LoginView onLogin={setUser} language="en" />;
   }
 
   if (isProfileOpen) {
     return (
       <ProfileView 
         user={user} 
+        setUser={setUser}
         onSave={(updatedUser) => {
           setUser(updatedUser);
           setIsProfileOpen(false);
@@ -188,11 +240,53 @@ export default function App() {
     );
   }
 
+  if (isSearchOpen) {
+    const t = TRANSLATIONS[user.language];
+    return (
+      <GlobalSearchView 
+        user={user}
+        onCall={(targetUsername) => {
+          const id = `call-${user.username}-${Date.now()}`;
+          setRoomId(id);
+          setRoomTag(t.call);
+          setIsJoined(true);
+          directCall(targetUsername, id);
+          setIsSearchOpen(false);
+        }}
+        onBack={() => setIsSearchOpen(false)}
+      />
+    );
+  }
+
   if (!isJoined) {
     const t = TRANSLATIONS[user.language];
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 theme-bg-main">
-        {/* Profile Button in Top Left */}
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 theme-bg-main relative">
+        {/* Incoming Call Modal */}
+        <AnimatePresence>
+          {incomingCall && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full max-w-sm theme-bg-panel border theme-border rounded-3xl p-8 text-center shadow-2xl">
+                <div className="relative inline-block mb-6">
+                  <img src={incomingCall.callerAvatar} alt={incomingCall.callerDisplayName} className="w-24 h-24 rounded-full border-4 border-indigo-600 mx-auto" />
+                  <div className="absolute -bottom-2 -right-2 bg-emerald-500 p-2 rounded-full text-white animate-bounce"><Video className="w-5 h-5" /></div>
+                </div>
+                <h2 className="text-xl font-bold theme-text-main mb-2">{incomingCall.callerDisplayName}</h2>
+                <p className="theme-text-sub mb-8">{t.incomingCall}</p>
+                <div className="flex gap-4">
+                  <button onClick={() => { setRoomId(incomingCall.roomId); setIsJoined(true); setIncomingCall(null); }} className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-3 rounded-2xl transition-all flex items-center justify-center gap-2">
+                    <Video className="w-5 h-5" /> {t.accept}
+                  </button>
+                  <button onClick={() => setIncomingCall(null)} className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-3 rounded-2xl transition-all flex items-center justify-center gap-2">
+                    <X className="w-5 h-5" /> {t.reject}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Profile Button */}
         <div className={`fixed top-6 ${user.language === 'ar' ? 'right-6' : 'left-6'} z-50`}>
           <button 
             onClick={() => setIsProfileOpen(true)}
@@ -215,99 +309,94 @@ export default function App() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md theme-bg-panel backdrop-blur-md theme-border border p-8 rounded-3xl shadow-2xl"
+          className="w-full max-w-lg"
         >
-          <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/20 overflow-hidden">
-              {user.avatar ? (
-                <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="text-white text-2xl font-bold">{user.displayName[0].toUpperCase()}</span>
-              )}
+          <div className="flex flex-col items-center mb-12">
+            <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center mb-6 shadow-xl shadow-indigo-500/20">
+              <Video className="text-white w-10 h-10" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight theme-text-main">{t.myRoomer}</h1>
-            <p className="theme-text-sub mt-2 text-center">
-              Collaborate in real-time with high-quality video and chat.
+            <h1 className="text-4xl font-black tracking-tight theme-text-main mb-2">{t.myRoomer}</h1>
+            <p className="theme-text-sub text-center max-w-sm">
+              {t.homeSub}
             </p>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex flex-col gap-4">
+          <div className="flex justify-center gap-4 mb-8">
+            <button 
+              onClick={() => setIsSearchOpen(true)}
+              className="flex items-center gap-2 px-6 py-3 theme-bg-panel border theme-border rounded-2xl theme-text-main hover:opacity-80 transition-all shadow-lg"
+            >
+              <Search className="w-5 h-5 text-indigo-500" />
+              <span className="font-bold">{t.globalSearch}</span>
+            </button>
+          </div>
+
+          <div className="theme-bg-panel backdrop-blur-md theme-border border p-8 rounded-3xl shadow-2xl space-y-6">
+            <div className="space-y-4">
               <div className="relative">
                 <input
                   type="text"
                   value={roomInput}
                   onChange={(e) => setRoomInput(e.target.value)}
                   placeholder={t.enterRoomId}
-                  className="w-full theme-bg-panel border theme-border rounded-2xl px-5 py-4 theme-text-main focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+                  className={`w-full theme-bg-main border theme-border rounded-2xl py-4 theme-text-main focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all text-lg font-bold ${user.language === 'ar' ? 'pr-12 pl-4' : 'pl-12 pr-4'}`}
                 />
-                <Hash className={`absolute ${user.language === 'ar' ? 'left-5' : 'right-5'} top-1/2 -translate-y-1/2 w-5 h-5 theme-text-sub opacity-50`} />
+                <Hash className={`absolute ${user.language === 'ar' ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 w-5 h-5 theme-text-sub opacity-50`} />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={() => {
-                    const id = Math.random().toString(36).substring(7);
-                    setRoomId(id);
-                    window.history.pushState({}, '', `?room=${id}`);
-                    setIsJoined(true);
-                  }}
-                  className="flex flex-col items-center justify-center gap-3 p-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl transition-all shadow-lg shadow-indigo-500/20 group"
-                >
-                  <Plus className="w-8 h-8 group-hover:scale-110 transition-transform" />
-                  <span className="font-bold text-sm">{t.createRoom}</span>
-                </button>
-                
-                <button
-                  onClick={() => {
-                    if (roomInput.trim()) {
-                      setRoomId(roomInput.trim());
-                      window.history.pushState({}, '', `?room=${roomInput.trim()}`);
-                      setIsJoined(true);
-                    }
-                  }}
-                  disabled={!roomInput.trim()}
-                  className="flex flex-col items-center justify-center gap-3 p-6 theme-bg-panel hover:opacity-80 theme-border border theme-text-main rounded-2xl transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Hash className="w-8 h-8 group-hover:scale-110 transition-transform" />
-                  <span className="font-bold text-sm">{t.joinRoom}</span>
-                </button>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={roomTagInput}
+                  onChange={(e) => setRoomTagInput(e.target.value)}
+                  placeholder={t.enterRoomTag}
+                  className={`w-full theme-bg-main border theme-border rounded-2xl py-3 theme-text-main focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all text-sm ${user.language === 'ar' ? 'pr-12 pl-4' : 'pl-12 pr-4'}`}
+                />
+                <Globe className={`absolute ${user.language === 'ar' ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 w-5 h-5 theme-text-sub opacity-50`} />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => {
+                  const id = roomInput.trim() || Math.random().toString(36).substring(7);
+                  setRoomId(id);
+                  setRoomTag(roomTagInput.trim() || t.room);
+                  setUser({ ...user, ownedRooms: [...(user.ownedRooms || []), id] });
+                  window.history.pushState({}, '', `?room=${id}`);
+                  setIsJoined(true);
+                }}
+                className="flex flex-col items-center justify-center gap-2 p-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl transition-all shadow-lg shadow-indigo-500/20 group"
+              >
+                <Plus className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                <span className="font-bold text-sm">{t.createRoom}</span>
+              </button>
+              
+              <button
+                onClick={() => {
+                  if (roomInput.trim()) {
+                    setRoomId(roomInput.trim());
+                    setRoomTag(roomTagInput.trim() || t.room);
+                    window.history.pushState({}, '', `?room=${roomInput.trim()}`);
+                    setIsJoined(true);
+                  }
+                }}
+                disabled={!roomInput.trim()}
+                className="flex flex-col items-center justify-center gap-2 p-6 theme-bg-panel hover:opacity-80 theme-border border theme-text-main rounded-2xl transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Users className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                <span className="font-bold text-sm">{t.joinRoom}</span>
+              </button>
             </div>
 
             {roomId && (
               <div className="pt-4 theme-border border-t">
-                <div className={`text-[10px] theme-text-sub uppercase tracking-widest font-bold mb-2 ${user.language === 'ar' ? 'mr-1' : 'ml-1'}`}>{t.currentRoom}</div>
-                <div className="flex items-center justify-between p-3 theme-bg-panel rounded-xl theme-border border">
+                <div className="flex items-center justify-between p-3 theme-bg-main rounded-xl theme-border border">
                   <span className="text-sm theme-text-main font-mono">{roomId}</span>
-                  <button 
-                    onClick={() => setIsJoined(true)}
-                    className="text-xs font-bold text-indigo-400 hover:text-indigo-300"
-                  >
-                    {t.rejoin}
-                  </button>
+                  <button onClick={() => setIsJoined(true)} className="text-xs font-bold text-indigo-400 hover:text-indigo-300">{t.rejoin}</button>
                 </div>
               </div>
             )}
-            
-            <button
-              type="button"
-              onClick={() => setUser(null)}
-              className="w-full theme-text-sub hover:theme-text-main text-xs font-medium py-2 transition-colors"
-            >
-              {t.logout}
-            </button>
-          </div>
-
-          <div className="mt-8 pt-6 theme-border border-t flex justify-center gap-4 text-xs theme-text-sub">
-            <div className="flex items-center gap-1">
-              <Shield className="w-3 h-3" />
-              <span>{t.p2p}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Users className="w-3 h-3" />
-              <span>{t.unlimited}</span>
-            </div>
           </div>
         </motion.div>
       </div>
@@ -317,6 +406,9 @@ export default function App() {
   return (
     <RoomView 
       roomId={roomId!} 
+      setRoomId={setRoomId}
+      roomTag={roomTag}
+      setRoomTag={setRoomTag}
       userId={USER_ID} 
       user={user}
       setUser={setUser}
@@ -327,7 +419,7 @@ export default function App() {
   );
 }
 
-function ProfileView({ user, onSave, onBack }: { user: User, onSave: (u: User) => void, onBack: () => void }) {
+function ProfileView({ user, setUser, onSave, onBack }: { user: User, setUser: (u: User) => void, onSave: (u: User) => void, onBack: () => void }) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [avatar, setAvatar] = useState(user.avatar);
   const [theme, setTheme] = useState(user.theme);
@@ -445,6 +537,41 @@ function ProfileView({ user, onSave, onBack }: { user: User, onSave: (u: User) =
             </div>
           </div>
 
+          {/* Owned Rooms */}
+          <div className="p-4 theme-bg-panel rounded-2xl border theme-border">
+            <div className={`text-sm font-bold theme-text-main mb-3 ${user.language === 'ar' ? 'text-right' : 'text-left'}`}>{t.ownedRooms}</div>
+            <div className="space-y-2">
+              {user.ownedRooms && user.ownedRooms.length > 0 ? (
+                Array.from(new Set(user.ownedRooms)).map(r => (
+                  <div key={r} className="flex items-center justify-between p-3 theme-bg-main rounded-xl border theme-border">
+                    <div className="flex items-center gap-2">
+                      <Hash className="w-4 h-4 text-indigo-500" />
+                      <span className="text-sm theme-text-main font-medium">{r}</span>
+                    </div>
+                    <button 
+                      onClick={async () => {
+                        if (!window.confirm(t.confirmDelete)) return;
+                        const res = await fetch('/api/rooms/delete', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ roomId: r, username: user.username })
+                        });
+                        if (res.ok) {
+                          setUser({ ...user, ownedRooms: user.ownedRooms?.filter(id => id !== r) });
+                        }
+                      }} 
+                      className="text-red-500 hover:text-red-400 p-1"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="text-xs theme-text-sub text-center py-2">{t.noOwnedRooms}</div>
+              )}
+            </div>
+          </div>
+
           <button
             onClick={() => onSave({ ...user, displayName, avatar, theme, language })}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-500/20"
@@ -457,16 +584,27 @@ function ProfileView({ user, onSave, onBack }: { user: User, onSave: (u: User) =
   );
 }
 
-function LoginView({ onLogin, language }: { onLogin: (u: string, d: string, a: string) => void, language: 'en' | 'ar' }) {
+function LoginView({ onLogin, language }: { onLogin: (u: User) => void, language: 'en' | 'ar' }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [avatar, setAvatar] = useState(`https://picsum.photos/seed/${Math.random()}/200`);
+  const [error, setError] = useState('');
   const t = TRANSLATIONS[language];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin(username, displayName || username, avatar);
+    setError('');
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      onLogin(data);
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   return (
@@ -485,6 +623,7 @@ function LoginView({ onLogin, language }: { onLogin: (u: string, d: string, a: s
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && <div className="p-3 bg-red-500/10 border border-red-500/50 text-red-500 text-xs rounded-xl text-center">{error}</div>}
           <div>
             <label className={`block text-xs font-semibold theme-text-sub uppercase mb-2 ${language === 'ar' ? 'mr-1' : 'ml-1'}`}>{t.username}</label>
             <input
@@ -507,16 +646,6 @@ function LoginView({ onLogin, language }: { onLogin: (u: string, d: string, a: s
               placeholder="••••••••"
             />
           </div>
-          <div>
-            <label className={`block text-xs font-semibold theme-text-sub uppercase mb-2 ${language === 'ar' ? 'mr-1' : 'ml-1'}`}>{t.displayNameOpt}</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full bg-slate-900/50 border theme-border rounded-xl px-4 py-3 theme-text-main focus:ring-2 focus:ring-indigo-500/50 outline-none"
-              placeholder="John Doe"
-            />
-          </div>
           <button
             type="submit"
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/20 mt-4"
@@ -529,10 +658,75 @@ function LoginView({ onLogin, language }: { onLogin: (u: string, d: string, a: s
   );
 }
 
+function UserSearch({ onCall, language }: { onCall: (username: string) => void, language: 'en' | 'ar' }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const t = TRANSLATIONS[language];
+
+  useEffect(() => {
+    if (query.length < 2) {
+      setResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const res = await fetch(`/api/users/search?q=${query}`);
+      const data = await res.json();
+      setResults(data);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  return (
+    <div className="relative w-full max-w-md mx-auto mb-8">
+      <div className="relative">
+        <Search className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 theme-text-sub ${language === 'ar' ? 'right-4' : 'left-4'}`} />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t.searchUser}
+          className={`w-full theme-bg-panel border theme-border rounded-2xl py-3 theme-text-main focus:ring-2 focus:ring-indigo-500/50 outline-none ${language === 'ar' ? 'pr-12 pl-4' : 'pl-12 pr-4'}`}
+        />
+      </div>
+      <AnimatePresence>
+        {results.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="absolute top-full left-0 right-0 mt-2 theme-bg-panel border theme-border rounded-2xl shadow-2xl z-50 overflow-hidden"
+          >
+            {results.map((u) => (
+              <div key={u.username} className="flex items-center justify-between p-4 hover:bg-indigo-500/10 transition-colors border-b theme-border last:border-0">
+                <div className="flex items-center gap-3">
+                  <img src={u.avatar} alt={u.displayName} className="w-10 h-10 rounded-xl object-cover" />
+                  <div>
+                    <div className="text-sm font-bold theme-text-main">{u.displayName}</div>
+                    <div className="text-xs theme-text-sub">@{u.username}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { onCall(u.username); setQuery(''); }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-xl transition-all"
+                >
+                  <Video className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function RoomView({ 
-  roomId, userId, user, setUser, soundsEnabled, setSoundsEnabled, onLeave 
+  roomId, setRoomId, roomTag: initialRoomTag, setRoomTag: setAppRoomTag, userId, user, setUser, soundsEnabled, setSoundsEnabled, onLeave 
 }: { 
   roomId: string; 
+  setRoomId: (id: string) => void;
+  roomTag: string;
+  setRoomTag: (tag: string) => void;
   userId: string; 
   user: User;
   setUser: (u: User) => void;
@@ -546,8 +740,14 @@ function RoomView({
     peers, localStream, setLocalStream, toggleMedia, 
     startScreenShare, stopScreenShare, isScreenSharing,
     messages, sendChatMessage, isMutedAll, toggleMuteAll,
-    sendMuteStatus, updateProfile
+    sendMuteStatus, updateProfile, quality, changeQuality,
+    lobbyRequests, isWaitingInLobby, isKicked, roomTag, updateRoomTag, incomingCall,
+    joinRoom, approveUser, rejectUser, kickUser, deleteRoom, setIncomingCall, updateRoomSettings
   } = useWebRTC(roomId, userId, user.username, user.displayName, user.avatar);
+
+  useEffect(() => {
+    if (roomTag) setAppRoomTag(roomTag);
+  }, [roomTag]);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -561,7 +761,12 @@ function RoomView({
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatInput, setChatInput] = useState('');
-  
+  const [isPreJoin, setIsPreJoin] = useState(true);
+  const [preJoinMic, setPreJoinMic] = useState(true);
+  const [preJoinCam, setPreJoinCam] = useState(true);
+  const [autoAccept, setAutoAccept] = useState(false);
+  const [autoReject, setAutoReject] = useState(false);
+
   // Profile editing state
   const [tempDisplayName, setTempDisplayName] = useState(user.displayName);
   const [tempAvatar, setTempAvatar] = useState(user.avatar);
@@ -570,18 +775,6 @@ function RoomView({
   const prevMessagesCount = useRef(messages.length);
 
   const isSpeaking = useAudioActivity(localStream, micOn);
-
-  const playSound = (url: string) => {
-    if (!soundsEnabled) return;
-    const audio = new Audio(url);
-    audio.play().catch(e => console.warn("Audio play blocked:", e));
-  };
-
-  const handleUpdateProfile = () => {
-    const newUser = { ...user, displayName: tempDisplayName, avatar: tempAvatar };
-    setUser(newUser);
-    updateProfile(tempDisplayName, tempAvatar);
-  };
 
   // Trigger sounds for peers joining/leaving
   useEffect(() => {
@@ -603,6 +796,12 @@ function RoomView({
     }
     prevMessagesCount.current = messages.length;
   }, [messages.length, userId]);
+
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream, isPreJoin, isScreenSharing]);
 
   useEffect(() => {
     const initMedia = async () => {
@@ -644,6 +843,79 @@ function RoomView({
     }
   }, [messages]);
 
+  const isOwner = user.ownedRooms?.includes(roomId);
+
+  useEffect(() => {
+    if (!isPreJoin && !isWaitingInLobby) {
+      joinRoom(isOwner || false, initialRoomTag);
+    }
+  }, [isPreJoin, isWaitingInLobby]);
+
+  if (isKicked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center theme-bg-main p-4">
+        <div className="text-center">
+          <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold theme-text-main">You have been kicked</h1>
+          <button onClick={() => window.location.href = '/'} className="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-xl">Go Home</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isWaitingInLobby) {
+    return (
+      <div className="min-h-screen flex items-center justify-center theme-bg-main p-4">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <h1 className="text-2xl font-bold theme-text-main">{t.waitingApproval}</h1>
+          <button onClick={onLeave} className="mt-4 theme-text-sub hover:theme-text-main transition-colors">{t.leaveRoom}</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPreJoin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center theme-bg-main p-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg theme-bg-panel border theme-border rounded-3xl p-8 shadow-2xl">
+          <h1 className="text-2xl font-bold theme-text-main mb-6 text-center">{t.preJoin}</h1>
+          <div className="aspect-video bg-slate-900 rounded-2xl mb-6 overflow-hidden relative border theme-border">
+            <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+            {!preJoinCam && (
+              <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+                <img src={user.avatar} alt={user.displayName} className="w-24 h-24 rounded-full border-4 border-indigo-600" />
+              </div>
+            )}
+          </div>
+          <div className="flex justify-center gap-4 mb-8">
+            <button onClick={() => setPreJoinMic(!preJoinMic)} className={`p-4 rounded-2xl transition-all ${preJoinMic ? 'bg-indigo-600 text-white' : 'bg-red-500/20 text-red-500'}`}>
+              {preJoinMic ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
+            </button>
+            <button onClick={() => setPreJoinCam(!preJoinCam)} className={`p-4 rounded-2xl transition-all ${preJoinCam ? 'bg-indigo-600 text-white' : 'bg-red-500/20 text-red-500'}`}>
+              {preJoinCam ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
+            </button>
+          </div>
+          <button onClick={() => { setIsPreJoin(false); setMicOn(preJoinMic); setCamOn(preJoinCam); }} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-500/20">
+            {t.joinNow}
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
+  const playSound = (url: string) => {
+    if (!soundsEnabled) return;
+    const audio = new Audio(url);
+    audio.play().catch(e => console.warn("Audio play blocked:", e));
+  };
+
+  const handleUpdateProfile = () => {
+    const newUser = { ...user, displayName: tempDisplayName, avatar: tempAvatar };
+    setUser(newUser);
+    updateProfile(tempDisplayName, tempAvatar);
+  };
+
   const handleToggleMic = () => {
     toggleMedia('audio');
     setMicOn(!micOn);
@@ -683,6 +955,50 @@ function RoomView({
 
   return (
     <div className="h-screen flex flex-col theme-bg-main overflow-hidden">
+      {/* Lobby Requests (Owner only) */}
+      <AnimatePresence>
+        {isOwner && lobbyRequests.length > 0 && (
+          <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 50 }} className="fixed top-20 right-4 z-50 w-80 space-y-2">
+            {lobbyRequests.map(req => (
+              <div key={req.userId} className="theme-bg-panel border theme-border p-4 rounded-2xl shadow-2xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <img src={req.avatar} alt={req.displayName} className="w-10 h-10 rounded-xl" />
+                  <div className="text-sm font-bold theme-text-main">{req.displayName}</div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => approveUser(req.userId)} className="p-2 bg-emerald-500 text-white rounded-lg"><Check className="w-4 h-4" /></button>
+                  <button onClick={() => rejectUser(req.userId)} className="p-2 bg-red-500 text-white rounded-lg"><X className="w-4 h-4" /></button>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Incoming Call Modal */}
+      <AnimatePresence>
+        {incomingCall && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full max-w-sm theme-bg-panel border theme-border rounded-3xl p-8 text-center shadow-2xl">
+              <div className="relative inline-block mb-6">
+                <img src={incomingCall.callerAvatar} alt={incomingCall.callerDisplayName} className="w-24 h-24 rounded-full border-4 border-indigo-600 mx-auto" />
+                <div className="absolute -bottom-2 -right-2 bg-emerald-500 p-2 rounded-full text-white animate-bounce"><Video className="w-5 h-5" /></div>
+              </div>
+              <h2 className="text-xl font-bold theme-text-main mb-2">{incomingCall.callerDisplayName}</h2>
+              <p className="theme-text-sub mb-8">{t.incomingCall}</p>
+              <div className="flex gap-4">
+                <button onClick={() => { setRoomId(incomingCall.roomId); setIncomingCall(null); }} className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-3 rounded-2xl transition-all flex items-center justify-center gap-2">
+                  <Video className="w-5 h-5" /> {t.accept}
+                </button>
+                <button onClick={() => setIncomingCall(null)} className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-3 rounded-2xl transition-all flex items-center justify-center gap-2">
+                  <X className="w-5 h-5" /> {t.reject}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <header className="h-16 border-b theme-border flex items-center justify-between px-6 theme-bg-panel backdrop-blur-md z-10 shrink-0">
         <div className="flex items-center gap-4">
@@ -690,9 +1006,20 @@ function RoomView({
             <Video className="text-white w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-black theme-text-main leading-none tracking-tight">{t.room}: {roomId}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-black theme-text-main leading-none tracking-tight">{roomTag || roomId}</h2>
+              {isOwner && (
+                <button 
+                  onClick={deleteRoom}
+                  className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                  title={t.deleteRoom}
+                >
+                  <Shield className="w-3 h-3" />
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] theme-text-sub uppercase tracking-widest font-bold opacity-60">{t.myRoomer} • {t.connected}</span>
+              <span className="text-[10px] theme-text-sub uppercase tracking-widest font-bold opacity-60">{t.myRoomer} • {roomId} • {peers.size + 1} {t.participants}</span>
               <button 
                 onClick={copyLink}
                 className="theme-text-sub hover:theme-text-main transition-colors"
@@ -745,16 +1072,26 @@ function RoomView({
                       <span className="text-sm theme-text-main font-medium">{user.displayName} ({t.you})</span>
                     </div>
                     {Array.from(peers.values()).map((peer: Peer) => (
-                      <button 
-                        key={peer.userId} 
-                        onClick={() => setViewingProfile(peer)}
-                        className="w-full flex items-center gap-3 p-1 hover:opacity-80 rounded-lg transition-colors text-left"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400 overflow-hidden">
-                          {peer.avatar ? <img src={peer.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : peer.displayName[0].toUpperCase()}
-                        </div>
-                        <span className="text-sm theme-text-sub">{peer.displayName}</span>
-                      </button>
+                      <div key={peer.userId} className="flex items-center justify-between group">
+                        <button 
+                          onClick={() => setViewingProfile(peer)}
+                          className="flex items-center gap-3 p-1 hover:opacity-80 rounded-lg transition-colors text-left flex-1"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400 overflow-hidden">
+                            {peer.avatar ? <img src={peer.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : peer.displayName[0].toUpperCase()}
+                          </div>
+                          <span className="text-sm theme-text-sub">{peer.displayName}</span>
+                        </button>
+                        {isOwner && (
+                          <button 
+                            onClick={() => kickUser(peer.userId)}
+                            className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                            title={t.kick}
+                          >
+                            <UserMinus className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </motion.div>
@@ -1117,6 +1454,26 @@ function RoomView({
               </div>
 
               <div className="space-y-6">
+                {isOwner && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold theme-text-sub uppercase tracking-widest">{t.roomTag}</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={initialRoomTag} 
+                        onChange={(e) => setAppRoomTag(e.target.value)}
+                        className="flex-1 theme-bg-main border theme-border rounded-xl px-4 py-2 theme-text-main outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      />
+                      <button 
+                        onClick={() => updateRoomTag(initialRoomTag)}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-xs"
+                      >
+                        {t.saveChanges}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'}`}>
                     <div className="text-sm font-semibold theme-text-main">{t.muteAll}</div>
@@ -1143,6 +1500,68 @@ function RoomView({
                   </button>
                 </div>
 
+                {isOwner && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'}`}>
+                        <div className="text-sm font-semibold theme-text-main">{t.autoAccept}</div>
+                        <div className="text-xs theme-text-sub">{t.autoAcceptSub}</div>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newVal = !autoAccept;
+                          setAutoAccept(newVal);
+                          if (newVal) setAutoReject(false);
+                          updateRoomSettings(newVal, false);
+                        }}
+                        className={`p-3 rounded-xl transition-all ${autoAccept ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                      >
+                        <CheckCircle2 className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'}`}>
+                        <div className="text-sm font-semibold theme-text-main">{t.autoReject}</div>
+                        <div className="text-xs theme-text-sub">{t.autoRejectSub}</div>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const newVal = !autoReject;
+                          setAutoReject(newVal);
+                          if (newVal) setAutoAccept(false);
+                          updateRoomSettings(false, newVal);
+                        }}
+                        className={`p-3 rounded-xl transition-all ${autoReject ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                      >
+                        <UserMinus className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                <div className="pt-6 theme-border border-t">
+                  <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'} mb-4`}>
+                    <div className="text-sm font-semibold theme-text-main">{t.quality}</div>
+                    <div className="text-xs theme-text-sub">{t.qualitySub}</div>
+                  </div>
+                  <div className="grid grid-cols-5 gap-2">
+                    {(['1080', '720', '480', '360', '240'] as const).map((level) => (
+                      <button
+                        key={level}
+                        onClick={() => changeQuality(level)}
+                        className={`py-2 rounded-lg text-xs font-bold transition-all ${
+                          quality === level 
+                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' 
+                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                        }`}
+                      >
+                        {level}p
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="pt-6 theme-border border-t">
                   <button 
                     onClick={() => setIsSettingsOpen(false)}
@@ -1166,6 +1585,118 @@ interface PeerVideoProps {
   onMaximize: () => void;
   t: any;
   language: 'en' | 'ar';
+}
+
+function GlobalSearchView({ user, onCall, onBack }: { user: User, onCall: (u: string) => void, onBack: () => void }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const t = TRANSLATIONS[user.language];
+
+  const handleSearch = async () => {
+    if (query.length < 2) return;
+    const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    setResults(data);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 theme-bg-main">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-2xl theme-bg-panel backdrop-blur-md theme-border border rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[80vh]"
+      >
+        <div className="p-6 border-b theme-border flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="p-2 hover:opacity-80 rounded-full transition-colors">
+              <ArrowLeft className="w-5 h-5 theme-text-sub" />
+            </button>
+            <h1 className="text-xl font-bold theme-text-main">{t.globalSearch}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 theme-text-sub opacity-50" />
+              <input 
+                type="text" 
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                placeholder={t.searchUser}
+                className="w-full theme-bg-main border theme-border rounded-xl pl-10 pr-4 py-2 theme-text-main outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+            </div>
+            <button 
+              onClick={handleSearch}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-sm transition-all"
+            >
+              {t.search}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 flex overflow-hidden">
+          {/* Results List */}
+          <div className="w-1/2 border-r theme-border overflow-y-auto p-4 space-y-2">
+            {Array.from(new Map(results.map(u => [u.username, u])).values()).map((u: any) => (
+              <button 
+                key={u.username}
+                onClick={() => setSelectedUser(u)}
+                className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all ${selectedUser?.username === u.username ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'hover:bg-white/5 theme-text-main'}`}
+              >
+                <img src={u.avatar} alt={u.displayName} className="w-10 h-10 rounded-xl object-cover" />
+                <div className="text-left">
+                  <div className="font-bold text-sm">{u.displayName}</div>
+                  <div className={`text-xs ${selectedUser?.username === u.username ? 'text-white/70' : 'theme-text-sub'}`}>@{u.username}</div>
+                </div>
+              </button>
+            ))}
+            {results.length === 0 && query.length >= 2 && (
+              <div className="text-center py-12 theme-text-sub opacity-50">No users found</div>
+            )}
+            {query.length < 2 && (
+              <div className="text-center py-12 theme-text-sub opacity-50">Type to search users...</div>
+            )}
+          </div>
+
+          {/* User Details */}
+          <div className="w-1/2 p-8 flex flex-col items-center justify-center text-center">
+            {selectedUser ? (
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={selectedUser.username} className="w-full">
+                <div className="relative inline-block mb-6">
+                  <img src={selectedUser.avatar} alt={selectedUser.displayName} className="w-32 h-32 rounded-3xl border-4 border-indigo-600 shadow-2xl mx-auto" />
+                  <div className="absolute -bottom-2 -right-2 bg-emerald-500 w-6 h-6 rounded-full border-4 theme-bg-panel" />
+                </div>
+                <h2 className="text-2xl font-bold theme-text-main mb-1">{selectedUser.displayName}</h2>
+                <p className="theme-text-sub mb-8">@{selectedUser.username}</p>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => onCall(selectedUser.username)}
+                    className="flex flex-col items-center justify-center gap-2 p-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl transition-all shadow-lg shadow-indigo-500/20 group"
+                  >
+                    <Video className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                    <span className="font-bold text-xs">{t.call}</span>
+                  </button>
+                  <button 
+                    className="flex flex-col items-center justify-center gap-2 p-4 theme-bg-main hover:opacity-80 border theme-border theme-text-main rounded-2xl transition-all group"
+                  >
+                    <MessageSquare className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                    <span className="font-bold text-xs">{t.message}</span>
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="text-center theme-text-sub opacity-30">
+                <UserIcon className="w-16 h-16 mx-auto mb-4" />
+                <p>{t.userInfo}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
 }
 
 const PeerVideo: React.FC<PeerVideoProps> = ({ peer, onClick, onMaximize, t, language }) => {
