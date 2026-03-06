@@ -24,6 +24,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isMutedAll, setIsMutedAll] = useState(false);
+
   const socketRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<Map<string, Peer>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -31,7 +33,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const iceServers: RTCConfiguration = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      {
+      { 
         urls: 'turn:openrelay.metered.ca:443',
         username: 'openrelayproject',
         credential: 'openrelayproject'
@@ -57,20 +59,18 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     };
   }, []);
 
-  // 2. إنشاء اتصال Peer وتفعيل التفاوض التلقائي
+  // 2. إنشاء Peer
   const createPeer = useCallback(async (targetId: string, targetUsername: string, targetDisplayName: string, targetAvatar: string | undefined, isInitiator: boolean) => {
     if (peersRef.current.has(targetId)) return;
 
     const pc = new RTCPeerConnection(iceServers);
 
-    // إضافة المسارات المحلية فوراً قبل أي تفاوض
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current!);
       });
     }
 
-    // أهم جزء: التفاوض التلقائي (ضروري لمشاركة الشاشة)
     pc.onnegotiationneeded = async () => {
       try {
         const offer = await pc.createOffer();
@@ -104,19 +104,30 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
         } else {
           newPeers.set(targetId, { 
             userId: targetId, username: targetUsername, displayName: targetDisplayName, 
-            avatar: targetAvatar, connection: pc, stream: event.streams[0] 
+            avatar: targetAvatar, connection: pc, stream: event.streams[0], isMuted: false
           });
         }
         return newPeers;
       });
     };
 
-    const peer: Peer = { userId: targetId, username: targetUsername, displayName: targetDisplayName, avatar: targetAvatar, connection: pc };
+    if (isInitiator) {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socketRef.current?.send(JSON.stringify({
+        type: 'signal',
+        targetId,
+        senderId: userId,
+        signal: { sdp: pc.localDescription }
+      }));
+    }
+
+    const peer: Peer = { userId: targetId, username: targetUsername, displayName: targetDisplayName, avatar: targetAvatar, connection: pc, isMuted: false };
     peersRef.current.set(targetId, peer);
     setPeers(new Map(peersRef.current));
   }, [userId, iceServers]);
 
-  // 3. معالجة الإشارات (Signaling)
+  // 3. معالجة الإشارات
   const handleSignal = async (senderId: string, signal: any) => {
     const peer = peersRef.current.get(senderId);
     if (!peer) return;
@@ -140,17 +151,15 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     }
   };
 
-  // 4. وظيفة مشاركة الشاشة
+  // 4. مشاركة الشاشة
   const toggleScreenShare = async () => {
     try {
       if (!isScreenSharing) {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         const screenTrack = screenStream.getVideoTracks()[0];
 
-        // استبدال تراك الفيديو عند كل المشتركين
         peersRef.current.forEach(peer => {
-          const senders = peer.connection.getSenders();
-          const videoSender = senders.find(s => s.track?.kind === 'video');
+          const videoSender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
           if (videoSender) videoSender.replaceTrack(screenTrack);
         });
 
@@ -167,14 +176,52 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const stopScreenShare = () => {
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
     peersRef.current.forEach(peer => {
-      const senders = peer.connection.getSenders();
-      const videoSender = senders.find(s => s.track?.kind === 'video');
+      const videoSender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
       if (videoSender && videoTrack) videoSender.replaceTrack(videoTrack);
     });
     setIsScreenSharing(false);
   };
 
-  // 5. ربط السوكيت (Socket Connection)
+  // 5. تشغيل/إيقاف الصوت أو الفيديو
+  const toggleMedia = (type: 'audio' | 'video') => {
+    if (!localStreamRef.current) return;
+    const track = type === 'audio' ? localStreamRef.current.getAudioTracks()[0] : localStreamRef.current.getVideoTracks()[0];
+    if (track) {
+      track.enabled = !track.enabled;
+      if (type === 'audio') sendMuteStatus(!track.enabled);
+    }
+  };
+
+  // 6. mute لجميع المشاركين
+  const toggleMuteAll = () => {
+    const newState = !isMutedAll;
+    setIsMutedAll(newState);
+    peersRef.current.forEach(peer => {
+      peer.stream?.getAudioTracks().forEach(track => track.enabled = !newState);
+    });
+  };
+
+  const sendMuteStatus = (isMuted: boolean) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'mute-status', senderId: userId, isMuted }));
+    }
+  };
+
+  // 7. تحديث الملف الشخصي
+  const updateProfile = (newDisplayName: string, newAvatar?: string) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'profile-update', senderId: userId, displayName: newDisplayName, avatar: newAvatar }));
+    }
+  };
+
+  // 8. الدردشة
+  const sendChatMessage = (text: string) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'chat', text, senderId: userId, username, displayName, avatar, timestamp: Date.now() }));
+    }
+  };
+
+  // 9. WebSocket
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${protocol}//${window.location.host}`);
@@ -204,11 +251,51 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
           peersRef.current.delete(message.userId);
           setPeers(new Map(peersRef.current));
           break;
+        case 'chat':
+          setMessages(prev => [...prev, {
+            text: message.text,
+            senderId: message.senderId,
+            username: message.username,
+            displayName: message.displayName,
+            avatar: message.avatar,
+            timestamp: message.timestamp
+          }]);
+          break;
+        case 'mute-status':
+          setPeers(prev => {
+            const newPeers = new Map(prev);
+            const p = newPeers.get(message.senderId);
+            if (p) p.isMuted = message.isMuted;
+            return newPeers;
+          });
+          break;
+        case 'profile-update':
+          setPeers(prev => {
+            const newPeers = new Map(prev);
+            const p = newPeers.get(message.senderId);
+            if (p) {
+              p.displayName = message.displayName;
+              p.avatar = message.avatar;
+            }
+            return newPeers;
+          });
+          break;
       }
     };
 
     return () => socket.close();
-  }, [roomId, userId, createPeer]);
+  }, [roomId, userId, username, displayName, avatar, createPeer]);
 
-  return { peers, localStream, isScreenSharing, toggleScreenShare, messages, sendChatMessage: (text: string) => {} };
+  return {
+    peers,
+    localStream,
+    isScreenSharing,
+    toggleScreenShare,
+    toggleMedia,
+    toggleMuteAll,
+    sendMuteStatus,
+    updateProfile,
+    messages,
+    sendChatMessage
+  };
 }
