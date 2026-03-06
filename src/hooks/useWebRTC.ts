@@ -28,12 +28,10 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const socketRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<Map<string, Peer>>(new Map());
 
-  // تم تعديل هذا الجزء فقط
   const iceServers = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-
       {
         urls: 'turn:openrelay.metered.ca:80',
         username: 'openrelayproject',
@@ -47,6 +45,20 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     ],
   };
 
+  // 🔹 Capture local media immediately
+  useEffect(() => {
+    const initLocalStream = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        setLocalStream(stream);
+      } catch (err) {
+        console.error("Error accessing local media:", err);
+      }
+    };
+    initLocalStream();
+  }, []);
+
+  // 🔹 Add local tracks to all existing peers whenever localStream changes
   useEffect(() => {
     if (localStream) {
       peersRef.current.forEach(peer => {
@@ -105,18 +117,16 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
         case 'mute-status':
           setPeers(prev => {
-            const newPeers = new Map<string, Peer>(prev);
+            const newPeers = new Map(prev);
             const existing = newPeers.get(message.senderId);
-            if (existing) {
-              existing.isMuted = message.isMuted;
-            }
+            if (existing) existing.isMuted = message.isMuted;
             return newPeers;
           });
           break;
 
         case 'profile-update':
           setPeers(prev => {
-            const newPeers = new Map<string, Peer>(prev);
+            const newPeers = new Map(prev);
             const existing = newPeers.get(message.senderId);
             if (existing) {
               existing.displayName = message.displayName;
@@ -174,9 +184,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     setIsMutedAll(newState);
     peersRef.current.forEach(peer => {
       if (peer.stream) {
-        peer.stream.getAudioTracks().forEach(track => {
-          track.enabled = !newState;
-        });
+        peer.stream.getAudioTracks().forEach(track => track.enabled = !newState);
       }
     });
   };
@@ -185,22 +193,10 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     const pc = new RTCPeerConnection(iceServers);
 
-    pc.onconnectionstatechange = () => {
-      console.log("Connection state:", pc.connectionState);
-    };
+    pc.onconnectionstatechange = () => console.log("Connection state:", pc.connectionState);
+    pc.oniceconnectionstatechange = () => console.log("ICE state:", pc.iceConnectionState);
 
-    pc.oniceconnectionstatechange = () => {
-      console.log("ICE state:", pc.iceConnectionState);
-    };
-
-    const peer: Peer = {
-      userId: targetId,
-      username: targetUsername,
-      displayName: targetDisplayName,
-      avatar: targetAvatar,
-      connection: pc,
-      isMuted: false
-    };
+    const peer: Peer = { userId: targetId, username: targetUsername, displayName: targetDisplayName, avatar: targetAvatar, connection: pc, isMuted: false };
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -213,25 +209,29 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       }
     };
 
+    // 🔹 Receive remote tracks
     pc.ontrack = (event) => {
       setPeers(prev => {
-        const newPeers = new Map<string, Peer>(prev);
+        const newPeers = new Map(prev);
         const existing = newPeers.get(targetId);
         if (existing) {
           existing.stream = event.streams[0];
+        } else {
+          newPeers.set(targetId, { userId: targetId, username: targetUsername, displayName: targetDisplayName, avatar: targetAvatar, connection: pc, stream: event.streams[0], isMuted: false });
         }
         return newPeers;
       });
     };
 
+    // 🔹 Add local tracks if ready
     if (localStream) {
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
     }
 
+    // 🔹 Initiator creates offer
     if (isInitiator) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
       socketRef.current?.send(JSON.stringify({
         type: 'signal',
         targetId,
@@ -250,11 +250,9 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     if (signal.sdp) {
       await peer.connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-
       if (signal.sdp.type === 'offer') {
         const answer = await peer.connection.createAnswer();
         await peer.connection.setLocalDescription(answer);
-
         socketRef.current?.send(JSON.stringify({
           type: 'signal',
           targetId: senderId,
@@ -262,7 +260,6 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
           signal: { sdp: answer }
         }));
       }
-
     } else if (signal.candidate) {
       await peer.connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
     }
@@ -270,7 +267,6 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const removePeer = (targetId: string) => {
     const peer = peersRef.current.get(targetId);
-
     if (peer) {
       peer.connection.close();
       peersRef.current.delete(targetId);
@@ -279,92 +275,57 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   };
 
   const toggleMedia = async (type: 'audio' | 'video') => {
-
     if (!localStream) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-
       setLocalStream(stream);
-
-      peersRef.current.forEach(peer => {
-        stream.getTracks().forEach(track => peer.connection.addTrack(track, stream));
-      });
-
+      peersRef.current.forEach(peer => stream.getTracks().forEach(track => peer.connection.addTrack(track, stream)));
       return;
     }
 
-    const track = type === 'audio'
-      ? localStream.getAudioTracks()[0]
-      : localStream.getVideoTracks()[0];
-
+    const track = type === 'audio' ? localStream.getAudioTracks()[0] : localStream.getVideoTracks()[0];
     if (track) {
       track.enabled = !track.enabled;
-
-      if (type === 'audio') {
-        sendMuteStatus(!track.enabled);
-      }
+      if (type === 'audio') sendMuteStatus(!track.enabled);
     }
   };
 
   const startScreenShare = async () => {
+    if (!localStream) return null;
     try {
-
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true
-      }).catch(() => {
-        return navigator.mediaDevices.getDisplayMedia({ video: true });
-      });
-
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true }).catch(() => navigator.mediaDevices.getDisplayMedia({ video: true }));
       setIsScreenSharing(true);
 
       const videoTrack = screenStream.getVideoTracks()[0];
+      const audioTrack = screenStream.getAudioTracks()[0];
 
       peersRef.current.forEach(peer => {
+        const senders = peer.connection.getSenders();
+        const videoSender = senders.find(s => s.track?.kind === 'video');
+        if (videoSender) videoSender.replaceTrack(videoTrack);
 
-        const sender = peer.connection.getSenders().find(
-          s => s.track?.kind === 'video'
-        );
-
-        if (sender) {
-          sender.replaceTrack(videoTrack);
+        if (audioTrack) {
+          const audioSender = senders.find(s => s.track?.kind === 'audio');
+          if (audioSender) audioSender.replaceTrack(audioTrack);
         }
-
       });
 
       videoTrack.onended = () => stopScreenShare();
 
       return screenStream;
-
     } catch (err: any) {
-
-      if (err.name === 'NotAllowedError') {
-        console.warn("Screen sharing was cancelled by the user.");
-      } else {
-        console.error("Error sharing screen:", err);
-      }
-
+      console.error("Screen share error:", err);
       setIsScreenSharing(false);
-
       return null;
     }
   };
 
   const stopScreenShare = async () => {
-
     if (!localStream) return;
-
     const videoTrack = localStream.getVideoTracks()[0];
 
     peersRef.current.forEach(peer => {
-
-      const sender = peer.connection.getSenders().find(
-        s => s.track?.kind === 'video'
-      );
-
-      if (sender) {
-        sender.replaceTrack(videoTrack);
-      }
-
+      const videoSender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
+      if (videoSender) videoSender.replaceTrack(videoTrack);
     });
 
     setIsScreenSharing(false);
