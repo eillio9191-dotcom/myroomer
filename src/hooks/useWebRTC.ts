@@ -15,15 +15,15 @@ type UseWebRTCOptions = {
 
 const iceConfig: RTCConfiguration = {
   iceServers: [
-    { urls: "stun:stun.l.google.com:19302" }, // STUN
-    // { urls: "turn:your-turn-server:3478", username: "user", credential: "pass" }, // TURN
+    { urls: "stun:stun.l.google.com:19302" },
+    // { urls: "turn:YOUR_TURN_SERVER", username: "user", credential: "pass" }
   ],
 };
 
 type QualityLevel = "low" | "medium" | "high";
 
-const QUALITY_PRESETS: Record<QualityLevel, { bitrate: number; scale?: number }> = {
-  low: { bitrate: 150_000, scale: 2 },     // أقل استهلاك
+const QUALITY_PRESETS: Record<QualityLevel, { bitrate: number; scale: number }> = {
+  low: { bitrate: 150_000, scale: 2 },
   medium: { bitrate: 400_000, scale: 1.5 },
   high: { bitrate: 900_000, scale: 1 },
 };
@@ -41,13 +41,16 @@ export function useWebRTC({
 
   const socketRef = useRef<WebSocket | null>(null);
   const peersRef = useRef<Map<string, Peer>>(new Map());
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingPeersRef = useRef<string[]>([]);
   const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
 
-  // فتح WebSocket + Auto Reconnect
+  // ============================
+  // 1) WebSocket + Auto Reconnect
+  // ============================
   useEffect(() => {
-    let isClosedManually = false;
+    let closedManually = false;
 
     const connect = () => {
       const ws = new WebSocket(signalingUrl);
@@ -55,6 +58,7 @@ export function useWebRTC({
 
       ws.onopen = () => {
         reconnectAttemptsRef.current = 0;
+
         ws.send(
           JSON.stringify({
             type: "join-room",
@@ -63,6 +67,12 @@ export function useWebRTC({
             username,
           })
         );
+
+        // معالجة الـ pending peers بعد reconnect
+        if (localStream) {
+          pendingPeersRef.current.forEach((id) => createPeer(id, true));
+          pendingPeersRef.current = [];
+        }
       };
 
       ws.onmessage = async (event) => {
@@ -70,7 +80,11 @@ export function useWebRTC({
 
         switch (msg.type) {
           case "user-joined":
-            await createPeer(msg.userId, true);
+            if (!localStream) {
+              pendingPeersRef.current.push(msg.userId);
+            } else {
+              await createPeer(msg.userId, true);
+            }
             break;
 
           case "signal":
@@ -84,11 +98,11 @@ export function useWebRTC({
       };
 
       ws.onclose = () => {
-        if (isClosedManually) return;
-        // Auto reconnect
+        if (closedManually) return;
+
         if (reconnectAttemptsRef.current < 5) {
           const delay = 2000 * (reconnectAttemptsRef.current + 1);
-          reconnectAttemptsRef.current += 1;
+          reconnectAttemptsRef.current++;
           reconnectTimerRef.current = setTimeout(connect, delay);
         } else {
           peersRef.current.forEach((p) => p.connection.close());
@@ -101,16 +115,15 @@ export function useWebRTC({
     connect();
 
     return () => {
-      isClosedManually = true;
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      closedManually = true;
       socketRef.current?.close();
-      peersRef.current.forEach((p) => p.connection.close());
-      peersRef.current.clear();
-      setPeers(new Map());
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     };
   }, [signalingUrl, roomId, userId, username]);
 
-  // الحصول على الكاميرا/المايك مرة واحدة
+  // ============================
+  // 2) الحصول على الكاميرا/المايك
+  // ============================
   useEffect(() => {
     let cancelled = false;
 
@@ -120,11 +133,17 @@ export function useWebRTC({
           audio: true,
           video: true,
         });
+
         if (cancelled) return;
+
         setLocalStream(stream);
-        cameraTrackRef.current = stream.getVideoTracks()[0] || null;
+        cameraTrackRef.current = stream.getVideoTracks()[0];
+
+        // معالجة pending peers
+        pendingPeersRef.current.forEach((id) => createPeer(id, true));
+        pendingPeersRef.current = [];
       } catch (err) {
-        console.error("Error getUserMedia:", err);
+        console.error("getUserMedia error:", err);
       }
     };
 
@@ -132,35 +151,14 @@ export function useWebRTC({
 
     return () => {
       cancelled = true;
-      if (localStream) {
-        localStream.getTracks().forEach((t) => t.stop());
-      }
+      localStream?.getTracks().forEach((t) => t.stop());
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // عند توفر localStream → اربط كل الـ Tracks لكل Peer
-  useEffect(() => {
-    if (!localStream) return;
-
-    peersRef.current.forEach((peer) => {
-      const senders = peer.connection.getSenders();
-      const existingKinds = new Set(
-        senders.map((s) => s.track?.kind).filter(Boolean) as string[]
-      );
-
-      localStream.getTracks().forEach((track) => {
-        if (!existingKinds.has(track.kind)) {
-          peer.connection.addTrack(track, localStream);
-        }
-      });
-
-      applyOutgoingQualityToPeer(peer, quality);
-    });
-  }, [localStream, quality]);
-
+  // ============================
+  // 3) createPeer
+  // ============================
   const createPeer = async (targetId: string, isInitiator: boolean) => {
-    // ضمان وجود Stream قبل الاتصال
     if (!localStream) return;
 
     const pc = new RTCPeerConnection(iceConfig);
@@ -186,24 +184,34 @@ export function useWebRTC({
     pc.ontrack = (event) => {
       setPeers((prev) => {
         const map = new Map(prev);
-        const existing = map.get(targetId);
-        if (existing) {
-          existing.stream = event.streams[0];
-          map.set(targetId, { ...existing });
-        } else {
-          map.set(targetId, { id: targetId, connection: pc, stream: event.streams[0] });
-        }
+        map.set(targetId, { id: targetId, connection: pc, stream: event.streams[0] });
         return map;
       });
     };
 
-    // ربط كل الـ Tracks مباشرة بعد الإنشاء
+    // renegotiation
+    pc.onnegotiationneeded = async () => {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socketRef.current?.send(
+          JSON.stringify({
+            type: "signal",
+            targetId,
+            senderId: userId,
+            signal: { sdp: offer },
+          })
+        );
+      } catch {}
+    };
+
+    // إضافة كل الـ tracks
     localStream.getTracks().forEach((track) => {
       pc.addTrack(track, localStream);
     });
 
-    // تطبيق الجودة الحالية على هذا الـ Peer
-    applyOutgoingQualityToPeer(peer, quality);
+    // تطبيق الجودة
+    applyQualityToPeer(pc, quality);
 
     if (isInitiator) {
       const offer = await pc.createOffer();
@@ -222,6 +230,9 @@ export function useWebRTC({
     setPeers(new Map(peersRef.current));
   };
 
+  // ============================
+  // 4) handleSignal
+  // ============================
   const handleSignal = async (senderId: string, signal: any) => {
     let peer = peersRef.current.get(senderId);
 
@@ -235,6 +246,7 @@ export function useWebRTC({
 
     if (signal.sdp) {
       await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+
       if (signal.sdp.type === "offer") {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -252,35 +264,29 @@ export function useWebRTC({
     }
   };
 
-  const removePeer = (targetId: string) => {
-    const peer = peersRef.current.get(targetId);
+  // ============================
+  // 5) إزالة Peer
+  // ============================
+  const removePeer = (id: string) => {
+    const peer = peersRef.current.get(id);
     if (peer) {
       peer.connection.close();
-      peersRef.current.delete(targetId);
+      peersRef.current.delete(id);
       setPeers(new Map(peersRef.current));
     }
   };
 
-  const toggleMedia = (type: "audio" | "video") => {
-    if (!localStream) return;
-    const track =
-      type === "audio"
-        ? localStream.getAudioTracks()[0]
-        : localStream.getVideoTracks()[0];
-
-    if (track) {
-      track.enabled = !track.enabled;
-    }
-  };
-
-  // مشاركة الشاشة: لا نلمس localStream، فقط نبدّل sender.track
+  // ============================
+  // 6) مشاركة الشاشة
+  // ============================
   const startScreenShare = async () => {
     if (isScreenSharing) return;
+
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: false,
       });
+
       const screenTrack = screenStream.getVideoTracks()[0];
       if (!screenTrack) return;
 
@@ -289,84 +295,79 @@ export function useWebRTC({
       peersRef.current.forEach((peer) => {
         const sender = peer.connection
           .getSenders()
-          .find((s) => s.track && s.track.kind === "video");
+          .find((s) => s.track?.kind === "video");
+
         if (sender) {
           sender.replaceTrack(screenTrack);
-          // نطبق نفس الجودة على مشاركة الشاشة
-          applyOutgoingQualityToSender(sender, quality);
+          applyQualityToSender(sender, quality);
         }
       });
 
-      screenTrack.onended = () => {
-        stopScreenShare();
-      };
+      screenTrack.onended = () => stopScreenShare();
     } catch (err) {
-      console.error("Error screen share:", err);
+      console.error("ScreenShare error:", err);
       setIsScreenSharing(false);
     }
   };
 
   const stopScreenShare = () => {
     if (!isScreenSharing) return;
+
     const cameraTrack = cameraTrackRef.current;
-    if (!cameraTrack) {
-      setIsScreenSharing(false);
-      return;
-    }
+    if (!cameraTrack) return;
 
     peersRef.current.forEach((peer) => {
       const sender = peer.connection
         .getSenders()
-        .find((s) => s.track && s.track.kind === "video");
+        .find((s) => s.track?.kind === "video");
+
       if (sender) {
         sender.replaceTrack(cameraTrack);
-        applyOutgoingQualityToSender(sender, quality);
+        applyQualityToSender(sender, quality);
       }
     });
 
     setIsScreenSharing(false);
   };
 
-  // تغيير الجودة (Adaptive Bitrate)
+  // ============================
+  // 7) تغيير الجودة
+  // ============================
   const changeQuality = (level: QualityLevel) => {
     setQuality(level);
+
     peersRef.current.forEach((peer) => {
-      applyOutgoingQualityToPeer(peer, level);
+      applyQualityToPeer(peer.connection, level);
     });
   };
 
-  const applyOutgoingQualityToPeer = (peer: Peer, level: QualityLevel) => {
-    const senders = peer.connection.getSenders();
-    senders.forEach((sender) => {
-      if (sender.track && sender.track.kind === "video") {
-        applyOutgoingQualityToSender(sender, level);
+  const applyQualityToPeer = (pc: RTCPeerConnection, level: QualityLevel) => {
+    pc.getSenders().forEach((sender) => {
+      if (sender.track?.kind === "video") {
+        applyQualityToSender(sender, level);
       }
     });
   };
 
-  const applyOutgoingQualityToSender = (sender: RTCRtpSender, level: QualityLevel) => {
+  const applyQualityToSender = (sender: RTCRtpSender, level: QualityLevel) => {
     const preset = QUALITY_PRESETS[level];
     const params = sender.getParameters();
-    if (!params.encodings || params.encodings.length === 0) {
-      params.encodings = [{}];
-    }
+
+    if (!params.encodings) params.encodings = [{}];
+
     params.encodings[0].maxBitrate = preset.bitrate;
-    if (preset.scale) {
-      params.encodings[0].scaleResolutionDownBy = preset.scale;
-    }
-    sender.setParameters(params).catch((err) =>
-      console.warn("setParameters error:", err)
-    );
+    params.encodings[0].scaleResolutionDownBy = preset.scale;
+
+    sender.setParameters(params).catch(() => {});
   };
 
   return {
     peers,
     localStream,
-    toggleMedia,
+    isScreenSharing,
     startScreenShare,
     stopScreenShare,
-    isScreenSharing,
-    quality,
     changeQuality,
+    quality,
   };
 }
