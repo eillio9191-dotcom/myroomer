@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import path from "path";
+import fs from "fs/promises";
 
 async function startServer() {
   const app = express();
@@ -10,6 +11,7 @@ async function startServer() {
   const wss = new WebSocketServer({ server });
 
   const PORT = 3000;
+  const DATA_FILE = path.join(process.cwd(), "data.json");
 
   // Room state: roomId -> Set of WebSockets
   const rooms = new Map<string, Set<WebSocket>>();
@@ -17,12 +19,39 @@ async function startServer() {
   const socketInfo = new Map<WebSocket, { roomId: string; userId: string; username: string; displayName: string; avatar?: string }>();
 
   // Data structures for persistence and features
-  const users = new Map<string, { username: string; displayName: string; avatar?: string; theme: string; language: string; password?: string }>();
-  const roomOwners = new Map<string, string>(); // roomId -> userId (owner)
+  let users = new Map<string, { username: string; displayName: string; avatar?: string; theme: string; language: string; password?: string; isBanned?: boolean }>();
+  let roomOwners = new Map<string, string>(); // roomId -> userId (owner)
   const roomLobbies = new Map<string, Set<WebSocket>>(); // roomId -> Set of waiting WebSockets
-  const roomTags = new Map<string, string>(); // roomId -> tag
+  let roomTags = new Map<string, string>(); // roomId -> tag
   const userSockets = new Map<string, WebSocket>(); // userId -> WebSocket (for direct calls)
-  const roomSettings = new Map<string, { autoAccept: boolean; autoReject: boolean }>(); // roomId -> settings
+  let roomSettings = new Map<string, { autoAccept: boolean; autoReject: boolean }>(); // roomId -> settings
+
+  // Persistence logic
+  const loadData = async () => {
+    try {
+      const data = await fs.readFile(DATA_FILE, "utf-8");
+      const json = JSON.parse(data);
+      users = new Map(Object.entries(json.users || {}));
+      roomOwners = new Map(Object.entries(json.roomOwners || {}));
+      roomTags = new Map(Object.entries(json.roomTags || {}));
+      roomSettings = new Map(Object.entries(json.roomSettings || {}));
+      console.log("Data loaded from disk");
+    } catch (e) {
+      console.log("No existing data found, starting fresh");
+    }
+  };
+
+  const saveData = async () => {
+    const data = {
+      users: Object.fromEntries(users),
+      roomOwners: Object.fromEntries(roomOwners),
+      roomTags: Object.fromEntries(roomTags),
+      roomSettings: Object.fromEntries(roomSettings),
+    };
+    await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2));
+  };
+
+  await loadData();
 
   app.use(express.json());
 
@@ -39,8 +68,28 @@ async function startServer() {
     res.json(results);
   });
 
+  // Room Search API
+  app.get("/api/rooms/search", (req, res) => {
+    const query = (req.query.q as string || "").toLowerCase();
+    if (!query) return res.json([]);
+    
+    const results = Array.from(roomOwners.entries())
+      .filter(([id, _]) => {
+        const tag = (roomTags.get(id) || "").toLowerCase();
+        return id.toLowerCase().includes(query) || tag.includes(query);
+      })
+      .map(([id, owner]) => ({
+        id,
+        tag: roomTags.get(id),
+        owner: users.get(owner)?.displayName || owner
+      }))
+      .slice(0, 10);
+    
+    res.json(results);
+  });
+
   // Login/Register API
-  app.post("/api/auth/login", (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     const { username, password, displayName, avatar } = req.body;
     
     // Validation: English letters and numbers only for username
@@ -50,10 +99,17 @@ async function startServer() {
 
     const existingUser = users.get(username);
     if (existingUser) {
+      if (existingUser.isBanned) {
+        return res.status(403).json({ error: "Your account has been banned." });
+      }
       if (existingUser.password && existingUser.password !== password) {
         return res.status(401).json({ error: "Incorrect password." });
       }
-      return res.json(existingUser);
+      // Get owned rooms
+      const ownedRooms = Array.from(roomOwners.entries())
+        .filter(([_, owner]) => owner === username)
+        .map(([id, _]) => id);
+      return res.json({ ...existingUser, ownedRooms });
     }
 
     // Create new user
@@ -66,20 +122,95 @@ async function startServer() {
       language: 'en' 
     };
     users.set(username, newUser);
-    res.json(newUser);
+    await saveData();
+    res.json({ ...newUser, ownedRooms: [] });
   });
 
-  app.post('/api/rooms/delete', (req, res) => {
+  // Update User Profile API
+  app.post("/api/users/update", async (req, res) => {
+    const { username, displayName, avatar, theme, language, password } = req.body;
+    const user = users.get(username);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const updatedUser = { ...user, displayName, avatar, theme, language };
+    if (password) updatedUser.password = password;
+    
+    users.set(username, updatedUser);
+    await saveData();
+    
+    const ownedRooms = Array.from(roomOwners.entries())
+      .filter(([_, owner]) => owner === username)
+      .map(([id, _]) => id);
+      
+    res.json({ ...updatedUser, ownedRooms });
+  });
+
+  // Admin API: Get all users and their rooms
+  app.get("/api/admin/data", (req, res) => {
+    const allData = Array.from(users.values()).map(user => {
+      const ownedRooms = Array.from(roomOwners.entries())
+        .filter(([_, owner]) => owner === user.username)
+        .map(([id, _]) => ({
+          id,
+          tag: roomTags.get(id) || "No Tag"
+        }));
+      return {
+        username: user.username,
+        displayName: user.displayName,
+        avatar: user.avatar,
+        password: user.password, // Added password for admin
+        isBanned: user.isBanned || false,
+        ownedRooms
+      };
+    });
+    res.json(allData);
+  });
+
+  // Admin API: Ban/Unban user
+  app.post("/api/admin/toggle-ban", async (req, res) => {
+    const { username, adminUsername } = req.body;
+    if (adminUsername !== '1') return res.status(403).json({ error: "Unauthorized" });
+    
+    const user = users.get(username);
+    if (!user) return res.status(404).json({ error: "User not found" });
+    
+    user.isBanned = !user.isBanned;
+    await saveData();
+    res.json({ success: true, isBanned: user.isBanned });
+  });
+
+  // Room Settings API
+  app.get("/api/rooms/settings", (req, res) => {
+    const roomId = req.query.roomId as string;
+    const settings = roomSettings.get(roomId) || { autoAccept: false, autoReject: false };
+    res.json(settings);
+  });
+
+  app.post("/api/rooms/settings", async (req, res) => {
+    const { roomId, username, settings } = req.body;
+    if (roomOwners.get(roomId) !== username) return res.status(403).json({ error: "Not owner" });
+    
+    roomSettings.set(roomId, settings);
+    await saveData();
+    res.json({ success: true });
+  });
+
+  app.post('/api/rooms/delete', async (req, res) => {
     const { roomId, username } = req.body;
     if (roomOwners.get(roomId) === username) {
       roomOwners.delete(roomId);
       roomLobbies.delete(roomId);
+      roomTags.delete(roomId);
+      roomSettings.delete(roomId);
+      await saveData();
       // Notify users in room if any
       const roomClients = rooms.get(roomId);
       if (roomClients) {
         roomClients.forEach(client => {
-          client.send(JSON.stringify({ type: "room-deleted" }));
-          client.close();
+          try {
+            client.send(JSON.stringify({ type: "room-deleted" }));
+            client.close();
+          } catch (e) {}
         });
         rooms.delete(roomId);
       }
@@ -132,30 +263,51 @@ async function startServer() {
   wss.on("connection", (ws) => {
     console.log("New connection");
 
-    ws.on("message", (data) => {
+    ws.on("message", async (data) => {
       const message = JSON.parse(data.toString());
 
       switch (message.type) {
         case "join": {
           const { roomId, userId, username, displayName, avatar, isOwner, roomTag } = message;
           
+          const user = users.get(username);
+          if (user?.isBanned) {
+            ws.send(JSON.stringify({ type: "error", message: "You are banned." }));
+            ws.close();
+            return;
+          }
+
           // Track user socket for direct calls
           userSockets.set(userId, ws);
 
           // Handle room ownership
-          if (isOwner && !roomOwners.has(roomId)) {
+          let ownerId = roomOwners.get(roomId);
+          if (!ownerId) {
+            // First person to join a non-owned room becomes owner
             roomOwners.set(roomId, userId);
+            roomTags.set(roomId, roomTag || roomId);
+            ownerId = userId;
+            await saveData();
+            ws.send(JSON.stringify({ type: "you-are-owner", roomId }));
+          } else if (ownerId === userId) {
+            ws.send(JSON.stringify({ type: "you-are-owner", roomId }));
           }
 
           if (roomTag) {
             roomTags.set(roomId, roomTag);
+            await saveData();
           }
 
-          const ownerId = roomOwners.get(roomId);
           const settings = roomSettings.get(roomId) || { autoAccept: false, autoReject: false };
           
-          // Handle auto-settings
+          // Handle auto-settings and Admin Bypass
           if (ownerId && ownerId !== userId) {
+            // Admin (user 1) bypasses lobby
+            if (username === '1') {
+              joinRoom(ws, roomId, userId, username, displayName, avatar);
+              return;
+            }
+
             if (settings.autoReject) {
               ws.send(JSON.stringify({ type: "lobby-rejected" }));
               return;
@@ -230,6 +382,7 @@ async function startServer() {
           if (!info || roomOwners.get(roomId) !== info.userId) return;
 
           roomSettings.set(roomId, { autoAccept, autoReject });
+          await saveData();
           
           // If auto-accept is turned on, approve all currently waiting
           if (autoAccept) {
@@ -300,6 +453,7 @@ async function startServer() {
           rooms.delete(roomId);
           roomOwners.delete(roomId);
           roomLobbies.delete(roomId);
+          await saveData();
           break;
         }
 
@@ -309,6 +463,7 @@ async function startServer() {
           if (!info || roomOwners.get(roomId) !== info.userId) return;
 
           roomTags.set(roomId, roomTag);
+          await saveData();
           
           // Notify everyone in the room
           rooms.get(roomId)?.forEach(client => {
@@ -379,6 +534,25 @@ async function startServer() {
               }));
             }
           });
+          break;
+        }
+
+        case "quality-request": {
+          const { targetId, senderId, level } = message;
+          const info = socketInfo.get(ws);
+          if (!info) return;
+
+          // Find target socket
+          const targetSocket = Array.from(rooms.get(info.roomId) || [])
+            .find(c => socketInfo.get(c)?.userId === targetId);
+
+          if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+            targetSocket.send(JSON.stringify({
+              type: "quality-request",
+              senderId,
+              level
+            }));
+          }
           break;
         }
 

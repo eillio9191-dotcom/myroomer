@@ -57,12 +57,24 @@
   @apply fixed top-0 right-0 h-full w-full md:w-80 bg-white border-l border-slate-200 flex flex-col transition-transform duration-300 z-50;
 }
 
+.chat-message {
+  @apply max-w-[85%] p-3 rounded-2xl mb-3 text-sm relative border transition-all duration-200 shadow-sm;
+}
+
 .dark-theme .chat-message-other {
-  @apply bg-slate-800 text-slate-200 self-start rounded-tl-none;
+  @apply bg-slate-800/40 text-slate-200 mr-auto rounded-tl-none border-white/5;
 }
 
 .light-theme .chat-message-other {
-  @apply bg-slate-100 text-slate-800 self-start rounded-tl-none border border-slate-200;
+  @apply bg-slate-100 text-slate-800 mr-auto rounded-tl-none border-slate-200;
+}
+
+.dark-theme .chat-message-mine {
+  @apply bg-indigo-600/20 text-indigo-100 ml-auto rounded-tr-none border-indigo-500/30;
+}
+
+.light-theme .chat-message-mine {
+  @apply bg-indigo-600 text-white ml-auto rounded-tr-none border-indigo-700 shadow-indigo-500/20;
 }
 
 .dark-theme .settings-modal {

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Video, VideoOff, Mic, MicOff, Monitor, MonitorOff, 
   LogOut, Users, Settings, MessageSquare, Plus, Hash, Globe,
-  Copy, Check, Shield, X, Send, Volume2, VolumeX, Bell, BellOff,
+  Copy, Check, Clock, ShieldAlert, X, Send, Volume2, VolumeX, Bell, BellOff,
   Sun, Moon, Upload, ArrowLeft, User as UserIcon,
   Maximize2, Minimize2, Search, Phone, UserMinus, CheckCircle2, Trash2
 } from 'lucide-react';
@@ -76,6 +76,8 @@ const TRANSLATIONS = {
     done: "Done",
     quality: "Video Quality",
     qualitySub: "Adjust resolution and bitrate",
+    broadcastQuality: "Broadcast Quality",
+    broadcastQualitySub: "Apply quality settings to your outgoing stream",
     searchUser: "Search for a user...",
     call: "Call",
     message: "Message",
@@ -94,7 +96,7 @@ const TRANSLATIONS = {
     roomTag: "Room Tag",
     enterRoomTag: "Enter Room Tag (e.g. Family, Work)",
     homeSub: "Connect with your friends and family in secure and private rooms",
-    globalSearch: "Search for People",
+    globalSearch: "Search for People by Username",
     userInfo: "User Information",
     search: "Search",
     autoAccept: "Auto-accept all",
@@ -102,6 +104,19 @@ const TRANSLATIONS = {
     autoAcceptSub: "Automatically approve all join requests",
     autoRejectSub: "Automatically reject all join requests",
     confirmDelete: "Are you sure you want to delete this room?",
+    lobbySub: "The room owner will review your request shortly.",
+    offline: "No Internet Connection",
+    offlineSub: "Please check your network settings.",
+    adminDashboard: "Admin Dashboard",
+    allUsers: "All Users",
+    totalRooms: "Total Rooms",
+    noUsers: "No users found.",
+    viewRooms: "View Rooms",
+    backToProfile: "Back to Profile",
+    ban: "Ban User",
+    unban: "Unban User",
+    changePassword: "Change Password",
+    remove: "Remove",
   },
   ar: {
     room: "الغرفة",
@@ -121,63 +136,80 @@ const TRANSLATIONS = {
     avatarUrl: "رابط الصورة الرمزية",
     themePref: "تفضيل المظهر",
     themeSub: "التبديل بين المظهر الفاتح والداكن",
+    themePref_light: "فاتح",
+    themePref_dark: "داكن",
     langPref: "تفضيل اللغة",
     langSub: "اختر لغتك المفضلة",
     saveChanges: "حفظ التغييرات",
-    loginTitle: "Login to MyRoomer",
+    loginTitle: "تسجيل الدخول إلى MyRoomer",
     loginSub: "أدخل بياناتك للمتابعة",
     username: "اسم المستخدم",
     password: "كلمة المرور",
     displayNameOpt: "اسم العرض (اختياري)",
     signIn: "تسجيل الدخول",
-    participants: "المشاركون",
+    participants: "الحاضرين",
     status: "الحالة",
     online: "متصل",
     role: "الدور",
     member: "عضو",
-    closeProfile: "إغلاق الملف",
+    closeProfile: "إغلاق الملف الشخصي",
     chat: "الدردشة",
     typeMessage: "اكتب رسالة...",
     leaveRoom: "مغادرة الغرفة",
     maximize: "تكبير",
     minimize: "تصغير",
-    waiting: "بانتظار انضمام الآخرين...",
+    waiting: "في انتظار انضمام الآخرين...",
     shareLink: "شارك رابط الغرفة لبدء الاجتماع",
     you: "أنت",
     settings: "الإعدادات",
-    muteAll: "كتم أصوات الحضور",
+    muteAll: "كتم صوت الجميع",
     muteAllSub: "إسكات جميع الأصوات الواردة",
-    sounds: "تأثيرات صوتية",
+    sounds: "المؤثرات الصوتية",
     soundsSub: "أصوات الانضمام والمغادرة والرسائل",
     done: "تم",
     quality: "جودة الفيديو",
     qualitySub: "ضبط الدقة ومعدل البت",
-    searchUser: "البحث عن مستخدم...",
+    broadcastQuality: "جودة البث",
+    broadcastQualitySub: "تطبيق إعدادات الجودة على بثك الصادر",
+    searchUser: "البحث عن مستخدم باسم المستخدم...",
     call: "اتصال",
     message: "رسالة",
     preJoin: "إعدادات ما قبل الانضمام",
     joinNow: "انضم الآن",
-    waitingApproval: "بانتظار موافقة المالك...",
+    waitingApproval: "في انتظار موافقة المالك...",
     lobby: "غرفة الانتظار",
     approve: "قبول",
     reject: "رفض",
-    kick: "طرد",
+    kick: "إزالة",
     deleteRoom: "حذف الغرفة",
     ownedRooms: "غرفي",
     noOwnedRooms: "لم تقم بإنشاء أي غرف بعد.",
     incomingCall: "مكالمة واردة",
     accept: "قبول",
     roomTag: "وسم الغرفة",
-    enterRoomTag: "أدخل وسم الغرفة (مثل: العائلة، العمل)",
+    enterRoomTag: "أدخل وسم الغرفة (مثلاً: العائلة، العمل)",
     homeSub: "تواصل مع أصدقائك وعائلتك في غرف آمنة وخاصة",
-    globalSearch: "البحث عن الأشخاص",
+    globalSearch: "البحث عن أشخاص باسم المستخدم",
     userInfo: "معلومات المستخدم",
     search: "بحث",
-    autoAccept: "قبول تلقائي للجميع",
+    autoAccept: "استقبال تلقائي للجميع",
     autoReject: "رفض تلقائي للجميع",
     autoAcceptSub: "الموافقة تلقائياً على جميع طلبات الانضمام",
     autoRejectSub: "رفض تلقائياً جميع طلبات الانضمام",
     confirmDelete: "هل أنت متأكد أنك تريد حذف هذه الغرفة؟",
+    lobbySub: "سيقوم مالك الغرفة بمراجعة طلبك قريباً.",
+    offline: "لا يوجد اتصال بالإنترنت",
+    offlineSub: "يرجى التحقق من إعدادات الشبكة الخاصة بك.",
+    adminDashboard: "لوحة التحكم",
+    allUsers: "جميع المستخدمين",
+    totalRooms: "إجمالي الغرف",
+    noUsers: "لم يتم العثور على مستخدمين.",
+    viewRooms: "عرض الغرف",
+    backToProfile: "العودة للملف الشخصي",
+    ban: "حظر المستخدم",
+    unban: "إلغاء الحظر",
+    changePassword: "تغيير كلمة المرور",
+    remove: "إزالة",
   }
 };
 
@@ -186,14 +218,40 @@ const USER_ID = Math.random().toString(36).substring(7);
 
 export default function App() {
   const [roomId, setRoomId] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('myroomer_user');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [isJoined, setIsJoined] = useState(false);
   const [soundsEnabled, setSoundsEnabled] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [roomInput, setRoomInput] = useState('');
   const [roomTagInput, setRoomTagInput] = useState('');
   const [roomTag, setRoomTag] = useState('');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Persistence
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('myroomer_user', JSON.stringify(user));
+    }
+  }, [user]);
+
+  // Online/Offline handling
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Top-level signaling for incoming calls
   const { 
@@ -226,16 +284,25 @@ export default function App() {
     return <LoginView onLogin={setUser} language="en" />;
   }
 
+  if (isAdminOpen) {
+    return <AdminDashboard onBack={() => setIsAdminOpen(false)} language={user.language} adminUsername={user.username} />;
+  }
+
   if (isProfileOpen) {
     return (
       <ProfileView 
         user={user} 
         setUser={setUser}
+        isOnline={isOnline}
         onSave={(updatedUser) => {
           setUser(updatedUser);
           setIsProfileOpen(false);
         }} 
         onBack={() => setIsProfileOpen(false)} 
+        onOpenAdmin={() => {
+          setIsProfileOpen(false);
+          setIsAdminOpen(true);
+        }}
       />
     );
   }
@@ -254,6 +321,11 @@ export default function App() {
           setIsSearchOpen(false);
         }}
         onBack={() => setIsSearchOpen(false)}
+        onJoinRoom={(id) => {
+          setRoomId(id);
+          setIsJoined(true);
+          setIsSearchOpen(false);
+        }}
       />
     );
   }
@@ -262,6 +334,24 @@ export default function App() {
     const t = TRANSLATIONS[user.language];
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 theme-bg-main relative">
+        {/* Offline Banner */}
+        <AnimatePresence>
+          {!isOnline && (
+            <motion.div 
+              initial={{ y: -100 }}
+              animate={{ y: 0 }}
+              exit={{ y: -100 }}
+              className="fixed top-0 left-0 right-0 z-[200] bg-red-600 text-white py-3 px-4 flex items-center justify-center gap-3 shadow-lg"
+            >
+              <ShieldAlert className="w-5 h-5 animate-pulse" />
+              <div className="text-center">
+                <div className="font-bold text-sm">{t.offline}</div>
+                <div className="text-[10px] opacity-90">{t.offlineSub}</div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Incoming Call Modal */}
         <AnimatePresence>
           {incomingCall && (
@@ -414,18 +504,195 @@ export default function App() {
       setUser={setUser}
       soundsEnabled={soundsEnabled}
       setSoundsEnabled={setSoundsEnabled}
+      isOnline={isOnline}
       onLeave={() => setIsJoined(false)}
     />
   );
 }
 
-function ProfileView({ user, setUser, onSave, onBack }: { user: User, setUser: (u: User) => void, onSave: (u: User) => void, onBack: () => void }) {
+function AdminDashboard({ onBack, language, adminUsername }: { onBack: () => void, language: 'en' | 'ar', adminUsername: string }) {
+  const [adminData, setAdminData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const t = TRANSLATIONS[language];
+
+  const fetchData = () => {
+    fetch('/api/admin/data')
+      .then(res => res.json())
+      .then(data => {
+        setAdminData(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const toggleBan = async (username: string) => {
+    const res = await fetch('/api/admin/toggle-ban', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, adminUsername })
+    });
+    if (res.ok) {
+      fetchData();
+    }
+  };
+
+  return (
+    <div className="min-h-screen theme-bg-main p-4 md:p-8">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-4xl mx-auto"
+      >
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-full transition-colors">
+              <ArrowLeft className={`w-6 h-6 theme-text-main ${language === 'ar' ? 'rotate-180' : ''}`} />
+            </button>
+            <h1 className="text-2xl font-bold theme-text-main flex items-center gap-3">
+              <ShieldAlert className="w-8 h-8 text-red-500" />
+              {t.adminDashboard}
+            </h1>
+          </div>
+          <div className="theme-bg-panel px-4 py-2 rounded-xl border theme-border">
+            <span className="text-sm theme-text-sub">{t.allUsers}: {adminData.length}</span>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+          </div>
+        ) : (
+          <div className="grid gap-6">
+            {adminData.length === 0 ? (
+              <div className="text-center py-20 theme-text-sub">{t.noUsers}</div>
+            ) : (
+              adminData.map((user) => (
+                <motion.div 
+                  key={user.username}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className={`theme-bg-panel rounded-3xl p-6 border theme-border shadow-xl ${user.isBanned ? 'border-red-500/50 opacity-80' : ''}`}
+                >
+                  <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 rounded-full bg-indigo-600 overflow-hidden border-2 theme-border">
+                        {user.avatar ? (
+                          <img src={user.avatar} alt={user.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-white text-xl font-bold">
+                            {user.displayName[0]?.toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold theme-text-main">{user.displayName}</h3>
+                        <p className="text-sm theme-text-sub">@{user.username}</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">{t.password}:</span>
+                          <span className="text-xs theme-text-main font-mono bg-slate-800 px-2 py-0.5 rounded">{user.password}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => toggleBan(user.username)}
+                        disabled={user.username === '1'}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs transition-all ${user.isBanned ? 'bg-emerald-500 hover:bg-emerald-400 text-white' : 'bg-red-500 hover:bg-red-400 text-white'} disabled:opacity-50`}
+                      >
+                        {user.isBanned ? t.unban : t.ban}
+                      </button>
+                      <div className="text-right">
+                        <div className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-1">{t.totalRooms}</div>
+                        <div className="text-2xl font-bold theme-text-main">{user.ownedRooms.length}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {user.ownedRooms.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {user.ownedRooms.map((room: any) => (
+                        <div key={room.id} className="flex items-center justify-between p-3 theme-bg-main rounded-xl border theme-border group/room">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <Hash className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                            <div className="truncate">
+                              <div className="text-sm font-medium theme-text-main truncate">{room.tag}</div>
+                              <div className="text-[10px] theme-text-sub truncate">{room.id}</div>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={async () => {
+                              if (!window.confirm(t.confirmDelete)) return;
+                              const res = await fetch('/api/rooms/delete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ roomId: room.id, username: user.username })
+                              });
+                              if (res.ok) {
+                                setAdminData(prev => prev.map(u => u.username === user.username ? { ...u, ownedRooms: u.ownedRooms.filter((r: any) => r.id !== room.id) } : u));
+                              }
+                            }}
+                            className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg opacity-0 group-hover/room:opacity-100 transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              ))
+            )}
+          </div>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+function ProfileView({ user, setUser, isOnline, onSave, onBack, onOpenAdmin }: { user: User, setUser: (u: User) => void, isOnline: boolean, onSave: (u: User) => void, onBack: () => void, onOpenAdmin: () => void }) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [avatar, setAvatar] = useState(user.avatar);
   const [theme, setTheme] = useState(user.theme);
   const [language, setLanguage] = useState(user.language);
+  const [password, setPassword] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = TRANSLATIONS[user.language];
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: user.username,
+          displayName,
+          avatar,
+          theme,
+          language,
+          password: password || undefined
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      onSave(data);
+    } catch (err) {
+      console.error("Failed to save profile:", err);
+      // Fallback to local save if server fails
+      onSave({ ...user, displayName, avatar, theme, language });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -503,6 +770,17 @@ function ProfileView({ user, setUser, onSave, onBack }: { user: User, setUser: (
             />
           </div>
 
+          <div>
+            <label className={`block text-xs font-semibold theme-text-sub uppercase mb-2 ${user.language === 'ar' ? 'mr-1' : 'ml-1'}`}>{t.changePassword}</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full bg-slate-900/50 border theme-border rounded-xl px-4 py-3 theme-text-main focus:ring-2 focus:ring-indigo-500/50 outline-none"
+            />
+          </div>
+
           <div className="flex items-center justify-between p-4 theme-bg-panel rounded-2xl border theme-border">
             <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'}`}>
               <div className="text-sm font-bold theme-text-main">{t.themePref}</div>
@@ -572,12 +850,36 @@ function ProfileView({ user, setUser, onSave, onBack }: { user: User, setUser: (
             </div>
           </div>
 
-          <button
-            onClick={() => onSave({ ...user, displayName, avatar, theme, language })}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-500/20"
-          >
-            {t.saveChanges}
-          </button>
+          <div className="flex gap-4">
+            <button
+              onClick={handleSave}
+              disabled={isOnline === false || isSaving}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+            >
+              {isSaving ? '...' : t.saveChanges}
+            </button>
+            <button
+              onClick={() => {
+                localStorage.removeItem('myroomer_user');
+                window.location.reload();
+              }}
+              className="px-6 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-4 rounded-2xl transition-all flex items-center gap-2"
+            >
+              <LogOut className="w-5 h-5" />
+              {t.logout}
+            </button>
+          </div>
+
+          {/* Admin Button - Only for user 1 */}
+          {user.username === '1' && (
+            <button
+              onClick={onOpenAdmin}
+              className="w-full mt-4 p-4 theme-bg-panel border border-red-500/30 hover:border-red-500/60 rounded-2xl flex items-center justify-center gap-3 transition-all group"
+            >
+              <ShieldAlert className="w-5 h-5 text-red-500 group-hover:scale-110 transition-transform" />
+              <span className="text-sm font-bold text-red-500">{t.adminDashboard}</span>
+            </button>
+          )}
         </div>
       </motion.div>
     </div>
@@ -658,48 +960,69 @@ function LoginView({ onLogin, language }: { onLogin: (u: User) => void, language
   );
 }
 
-function UserSearch({ onCall, language }: { onCall: (username: string) => void, language: 'en' | 'ar' }) {
+function GlobalSearch({ onCall, language, onJoinRoom }: { onCall: (username: string) => void, language: 'en' | 'ar', onJoinRoom: (roomId: string) => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
+  const [roomResults, setRoomResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const t = TRANSLATIONS[language];
 
   useEffect(() => {
     if (query.length < 2) {
       setResults([]);
+      setRoomResults([]);
       return;
     }
     const timer = setTimeout(async () => {
-      const res = await fetch(`/api/users/search?q=${query}`);
-      const data = await res.json();
-      setResults(data);
+      setLoading(true);
+      try {
+        const [userRes, roomRes] = await Promise.all([
+          fetch(`/api/users/search?q=${query}`),
+          fetch(`/api/rooms/search?q=${query}`)
+        ]);
+        const userData = await userRes.json();
+        const roomData = await roomRes.json();
+        setResults(userData);
+        setRoomResults(roomData);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
     }, 300);
     return () => clearTimeout(timer);
   }, [query]);
 
   return (
     <div className="relative w-full max-w-md mx-auto mb-8">
-      <div className="relative">
-        <Search className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 theme-text-sub ${language === 'ar' ? 'right-4' : 'left-4'}`} />
+      <div className="relative group">
+        <Search className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 theme-text-sub group-focus-within:text-indigo-500 transition-colors ${language === 'ar' ? 'right-4' : 'left-4'}`} />
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={t.searchUser}
-          className={`w-full theme-bg-panel border theme-border rounded-2xl py-3 theme-text-main focus:ring-2 focus:ring-indigo-500/50 outline-none ${language === 'ar' ? 'pr-12 pl-4' : 'pl-12 pr-4'}`}
+          placeholder={t.globalSearch}
+          className={`w-full theme-bg-panel border theme-border rounded-2xl py-3 theme-text-main focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-xl ${language === 'ar' ? 'pr-12 pl-4' : 'pl-12 pr-4'}`}
         />
+        {loading && <div className={`absolute top-1/2 -translate-y-1/2 ${language === 'ar' ? 'left-4' : 'right-4'} animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600`}></div>}
       </div>
       <AnimatePresence>
-        {results.length > 0 && (
+        {(results.length > 0 || roomResults.length > 0) && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="absolute top-full left-0 right-0 mt-2 theme-bg-panel border theme-border rounded-2xl shadow-2xl z-50 overflow-hidden"
+            className="absolute top-full left-0 right-0 mt-2 theme-bg-panel border theme-border rounded-2xl shadow-2xl z-50 overflow-hidden max-h-96 overflow-y-auto"
           >
+            {results.length > 0 && (
+              <div className="px-4 py-2 text-[10px] font-bold theme-text-sub uppercase tracking-widest border-b theme-border bg-slate-900/50">{t.allUsers}</div>
+            )}
             {results.map((u) => (
               <div key={u.username} className="flex items-center justify-between p-4 hover:bg-indigo-500/10 transition-colors border-b theme-border last:border-0">
                 <div className="flex items-center gap-3">
-                  <img src={u.avatar} alt={u.displayName} className="w-10 h-10 rounded-xl object-cover" />
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 overflow-hidden border theme-border">
+                    {u.avatar ? <img src={u.avatar} alt={u.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <div className="w-full h-full flex items-center justify-center text-white text-sm font-bold">{u.displayName[0].toUpperCase()}</div>}
+                  </div>
                   <div>
                     <div className="text-sm font-bold theme-text-main">{u.displayName}</div>
                     <div className="text-xs theme-text-sub">@{u.username}</div>
@@ -713,6 +1036,29 @@ function UserSearch({ onCall, language }: { onCall: (username: string) => void, 
                 </button>
               </div>
             ))}
+
+            {roomResults.length > 0 && (
+              <div className="px-4 py-2 text-[10px] font-bold theme-text-sub uppercase tracking-widest border-b theme-border bg-slate-900/50">{t.totalRooms}</div>
+            )}
+            {roomResults.map((r) => (
+              <div key={r.id} className="flex items-center justify-between p-4 hover:bg-emerald-500/10 transition-colors border-b theme-border last:border-0">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center flex-shrink-0">
+                    <Hash className="w-5 h-5 text-indigo-500" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="text-sm font-bold theme-text-main truncate">{r.tag || r.id}</div>
+                    <div className="text-xs theme-text-sub truncate">@{r.owner}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { onJoinRoom(r.id); setQuery(''); }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                >
+                  {t.joinRoom}
+                </button>
+              </div>
+            ))}
           </motion.div>
         )}
       </AnimatePresence>
@@ -721,7 +1067,7 @@ function UserSearch({ onCall, language }: { onCall: (username: string) => void, 
 }
 
 function RoomView({ 
-  roomId, setRoomId, roomTag: initialRoomTag, setRoomTag: setAppRoomTag, userId, user, setUser, soundsEnabled, setSoundsEnabled, onLeave 
+  roomId, setRoomId, roomTag: initialRoomTag, setRoomTag: setAppRoomTag, userId, user, setUser, soundsEnabled, setSoundsEnabled, isOnline, onLeave 
 }: { 
   roomId: string; 
   setRoomId: (id: string) => void;
@@ -732,6 +1078,7 @@ function RoomView({
   setUser: (u: User) => void;
   soundsEnabled: boolean;
   setSoundsEnabled: (val: boolean) => void;
+  isOnline: boolean;
   onLeave: () => void;
 }) {
   const t = TRANSLATIONS[user.language];
@@ -741,7 +1088,8 @@ function RoomView({
     startScreenShare, stopScreenShare, isScreenSharing,
     messages, sendChatMessage, isMutedAll, toggleMuteAll,
     sendMuteStatus, updateProfile, quality, changeQuality,
-    lobbyRequests, isWaitingInLobby, isKicked, roomTag, updateRoomTag, incomingCall,
+    broadcastQuality, setBroadcastQuality,
+    lobbyRequests, isWaitingInLobby, isKicked, roomTag, updateRoomTag, incomingCall, isOwner,
     joinRoom, approveUser, rejectUser, kickUser, deleteRoom, setIncomingCall, updateRoomSettings
   } = useWebRTC(roomId, userId, user.username, user.displayName, user.avatar);
 
@@ -766,6 +1114,25 @@ function RoomView({
   const [preJoinCam, setPreJoinCam] = useState(true);
   const [autoAccept, setAutoAccept] = useState(false);
   const [autoReject, setAutoReject] = useState(false);
+
+  // Fetch room settings on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch(`/api/rooms/settings?roomId=${roomId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            setAutoAccept(data.autoAccept || false);
+            setAutoReject(data.autoReject || false);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching room settings:", err);
+      }
+    };
+    fetchSettings();
+  }, [roomId]);
 
   // Profile editing state
   const [tempDisplayName, setTempDisplayName] = useState(user.displayName);
@@ -820,6 +1187,16 @@ function RoomView({
     initMedia();
   }, []);
 
+  useEffect(() => {
+    if (localStream && isPreJoin) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (audioTrack) audioTrack.enabled = preJoinMic;
+      if (videoTrack) videoTrack.enabled = preJoinCam;
+      sendMuteStatus(!preJoinMic);
+    }
+  }, [preJoinMic, preJoinCam, localStream, isPreJoin]);
+
   // Handle unread messages
   useEffect(() => {
     if (!isChatOpen && messages.length > 0) {
@@ -843,19 +1220,25 @@ function RoomView({
     }
   }, [messages]);
 
-  const isOwner = user.ownedRooms?.includes(roomId);
+  const hasJoined = useRef(false);
 
   useEffect(() => {
-    if (!isPreJoin && !isWaitingInLobby) {
-      joinRoom(isOwner || false, initialRoomTag);
+    if (!isPreJoin && !hasJoined.current) {
+      joinRoom(false, initialRoomTag);
+      hasJoined.current = true;
     }
-  }, [isPreJoin, isWaitingInLobby]);
+  }, [isPreJoin]);
+
+  useEffect(() => {
+    if (lobbyRequests.length > 0) {
+      playSound(SOUNDS.JOIN);
+    }
+  }, [lobbyRequests.length]);
 
   if (isKicked) {
     return (
       <div className="min-h-screen flex items-center justify-center theme-bg-main p-4">
         <div className="text-center">
-          <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold theme-text-main">You have been kicked</h1>
           <button onClick={() => window.location.href = '/'} className="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-xl">Go Home</button>
         </div>
@@ -867,9 +1250,12 @@ function RoomView({
     return (
       <div className="min-h-screen flex items-center justify-center theme-bg-main p-4">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <h1 className="text-2xl font-bold theme-text-main">{t.waitingApproval}</h1>
-          <button onClick={onLeave} className="mt-4 theme-text-sub hover:theme-text-main transition-colors">{t.leaveRoom}</button>
+          <div className="flex flex-col items-center justify-center p-8 text-center">
+            <Clock className="w-16 h-16 text-indigo-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold theme-text-main mb-2">{t.waitingApproval}</h2>
+            <p className="theme-text-sub max-w-xs">{(t as any).lobbySub || "The room owner will review your request shortly."}</p>
+            <button onClick={onLeave} className="mt-6 theme-text-sub hover:theme-text-main transition-colors border border-current px-4 py-2 rounded-xl">{t.leaveRoom}</button>
+          </div>
         </div>
       </div>
     );
@@ -955,19 +1341,48 @@ function RoomView({
 
   return (
     <div className="h-screen flex flex-col theme-bg-main overflow-hidden">
+      {/* Offline Banner */}
+      <AnimatePresence>
+        {!isOnline && (
+          <motion.div 
+            initial={{ y: -100 }}
+            animate={{ y: 0 }}
+            exit={{ y: -100 }}
+            className="fixed top-0 left-0 right-0 z-[200] bg-red-600 text-white py-3 px-4 flex items-center justify-center gap-3 shadow-lg"
+          >
+            <ShieldAlert className="w-5 h-5 animate-pulse" />
+            <div className="text-center">
+              <div className="font-bold text-sm">{t.offline}</div>
+              <div className="text-[10px] opacity-90">{t.offlineSub}</div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Lobby Requests (Owner only) */}
       <AnimatePresence>
         {isOwner && lobbyRequests.length > 0 && (
-          <motion.div initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 50 }} className="fixed top-20 right-4 z-50 w-80 space-y-2">
+          <motion.div 
+            initial={{ opacity: 0, x: 50 }} 
+            animate={{ opacity: 1, x: 0 }} 
+            exit={{ opacity: 0, x: 50 }} 
+            className={`fixed top-20 right-4 z-50 w-80 space-y-2`}
+          >
             {lobbyRequests.map(req => (
-              <div key={req.userId} className="theme-bg-panel border theme-border p-4 rounded-2xl shadow-2xl flex items-center justify-between">
+              <div key={req.userId} className="theme-bg-panel border theme-border p-4 rounded-2xl shadow-2xl flex items-center justify-between group">
                 <div className="flex items-center gap-3">
-                  <img src={req.avatar} alt={req.displayName} className="w-10 h-10 rounded-xl" />
+                  <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center overflow-hidden">
+                    {req.avatar ? (
+                      <img src={req.avatar} alt={req.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <span className="text-xs font-bold text-slate-400">{req.displayName[0].toUpperCase()}</span>
+                    )}
+                  </div>
                   <div className="text-sm font-bold theme-text-main">{req.displayName}</div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => approveUser(req.userId)} className="p-2 bg-emerald-500 text-white rounded-lg"><Check className="w-4 h-4" /></button>
-                  <button onClick={() => rejectUser(req.userId)} className="p-2 bg-red-500 text-white rounded-lg"><X className="w-4 h-4" /></button>
+                  <button onClick={() => approveUser(req.userId)} className="p-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-lg transition-colors"><Check className="w-4 h-4" /></button>
+                  <button onClick={() => rejectUser(req.userId)} className="p-2 bg-red-500 hover:bg-red-400 text-white rounded-lg transition-colors"><X className="w-4 h-4" /></button>
                 </div>
               </div>
             ))}
@@ -1000,26 +1415,14 @@ function RoomView({
       </AnimatePresence>
 
       {/* Header */}
-      <header className="h-16 border-b theme-border flex items-center justify-between px-6 theme-bg-panel backdrop-blur-md z-10 shrink-0">
+      <header className="h-16 border-b theme-border flex items-center justify-between px-6 theme-bg-panel backdrop-blur-md z-10 shrink-0 relative">
         <div className="flex items-center gap-4">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
             <Video className="text-white w-5 h-5" />
           </div>
-          <div>
+          <div className="hidden sm:block">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-black theme-text-main leading-none tracking-tight">{roomTag || roomId}</h2>
-              {isOwner && (
-                <button 
-                  onClick={deleteRoom}
-                  className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                  title={t.deleteRoom}
-                >
-                  <Shield className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] theme-text-sub uppercase tracking-widest font-bold opacity-60">{t.myRoomer} • {roomId} • {peers.size + 1} {t.participants}</span>
+              <span className="text-[10px] theme-text-sub uppercase tracking-widest font-bold opacity-60">{t.myRoomer} • {roomId}</span>
               <button 
                 onClick={copyLink}
                 className="theme-text-sub hover:theme-text-main transition-colors"
@@ -1029,6 +1432,20 @@ function RoomView({
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Centered Room Name Badge */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="px-4 py-1.5 bg-indigo-500/10 border border-indigo-500/40 rounded-2xl flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.1)] backdrop-blur-sm"
+          >
+            <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+            <h2 className="text-sm font-black theme-text-main leading-none tracking-tight whitespace-nowrap">
+              {roomTag || roomId}
+            </h2>
+          </motion.div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -1049,6 +1466,11 @@ function RoomView({
                   +{peers.size - 3}
                 </div>
               )}
+              {isOwner && lobbyRequests.length > 0 && (
+                <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[8px] font-bold text-white border border-white/20 animate-bounce">
+                  {lobbyRequests.length}
+                </div>
+              )}
             </button>
 
             {/* Participants Dropdown */}
@@ -1058,13 +1480,13 @@ function RoomView({
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="absolute top-12 right-0 w-64 theme-bg-panel border theme-border rounded-2xl shadow-2xl p-4 z-50"
+                  className={`absolute top-12 right-0 w-64 theme-bg-panel border theme-border rounded-2xl shadow-2xl p-4 z-50`}
                 >
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xs font-bold theme-text-sub uppercase tracking-widest">{t.participants} ({peers.size + 1})</h3>
                     <button onClick={() => setIsParticipantsOpen(false)}><X className="w-3 h-3 theme-text-sub" /></button>
                   </div>
-                  <div className={`space-y-3 max-h-60 overflow-y-auto ${user.language === 'ar' ? 'pl-2' : 'pr-2'}`}>
+                  <div className={`space-y-3 max-h-80 overflow-y-auto ${user.language === 'ar' ? 'pl-2' : 'pr-2'}`}>
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white overflow-hidden">
                         {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : user.displayName[0].toUpperCase()}
@@ -1085,8 +1507,8 @@ function RoomView({
                         {isOwner && (
                           <button 
                             onClick={() => kickUser(peer.userId)}
-                            className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                            title={t.kick}
+                            className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                            title={t.remove}
                           >
                             <UserMinus className="w-4 h-4" />
                           </button>
@@ -1141,12 +1563,23 @@ function RoomView({
                           <div className="text-xs theme-text-main font-bold">{t.member}</div>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => setViewingProfile(null)}
-                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-500/30"
-                      >
-                        {t.closeProfile}
-                      </button>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => setViewingProfile(null)}
+                          className="flex-1 bg-slate-800 hover:bg-slate-700 theme-text-main font-bold py-4 rounded-2xl transition-all"
+                        >
+                          {t.closeProfile}
+                        </button>
+                        {isOwner && viewingProfile.username !== user.username && (
+                          <button 
+                            onClick={() => { kickUser((viewingProfile as any).userId); setViewingProfile(null); }}
+                            className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2"
+                          >
+                            <UserMinus className="w-5 h-5" />
+                            {t.remove}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 </div>
@@ -1336,21 +1769,21 @@ function RoomView({
                     className={`chat-message ${msg.senderId === userId ? 'chat-message-mine' : 'chat-message-other'}`}
                   >
                     {msg.senderId !== userId && (
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-4 h-4 rounded-full bg-slate-700 overflow-hidden">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-5 h-5 rounded-full bg-slate-700/50 border border-white/10 overflow-hidden">
                           {msg.avatar ? (
                             <img src={msg.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[8px] text-slate-400">
+                            <div className="w-full h-full flex items-center justify-center text-[8px] font-bold text-slate-400">
                               {msg.displayName[0].toUpperCase()}
                             </div>
                           )}
                         </div>
-                        <div className="text-[10px] font-bold text-indigo-400">{msg.displayName}</div>
+                        <div className="text-[10px] font-bold text-indigo-400/90">{msg.displayName}</div>
                       </div>
                     )}
-                    <div className="text-sm">{msg.text}</div>
-                    <div className={`text-[9px] opacity-50 mt-1 ${user.language === 'ar' ? 'text-left' : 'text-right'}`}>
+                    <div className="leading-relaxed break-words">{msg.text}</div>
+                    <div className={`text-[9px] mt-1.5 font-medium ${msg.senderId === userId ? 'text-right opacity-60' : 'text-left opacity-40'}`}>
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
@@ -1487,21 +1920,8 @@ function RoomView({
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'}`}>
-                    <div className="text-sm font-semibold theme-text-main">{t.sounds}</div>
-                    <div className="text-xs theme-text-sub">{t.soundsSub}</div>
-                  </div>
-                  <button 
-                    onClick={() => setSoundsEnabled(!soundsEnabled)}
-                    className={`p-3 rounded-xl transition-all ${soundsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}
-                  >
-                    {soundsEnabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
-                  </button>
-                </div>
-
                 {isOwner && (
-                  <>
+                  <div className="space-y-4 pt-4 border-t theme-border">
                     <div className="flex items-center justify-between">
                       <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'}`}>
                         <div className="text-sm font-semibold theme-text-main">{t.autoAccept}</div>
@@ -1512,11 +1932,16 @@ function RoomView({
                           const newVal = !autoAccept;
                           setAutoAccept(newVal);
                           if (newVal) setAutoReject(false);
-                          updateRoomSettings(newVal, false);
+                          updateRoomSettings(newVal, newVal ? false : autoReject);
+                          fetch('/api/rooms/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ roomId, username: user.username, settings: { autoAccept: newVal, autoReject: newVal ? false : autoReject } })
+                          });
                         }}
-                        className={`p-3 rounded-xl transition-all ${autoAccept ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                        className={`w-12 h-6 rounded-full transition-all relative ${autoAccept ? 'bg-indigo-600' : 'bg-slate-700'}`}
                       >
-                        <CheckCircle2 className="w-5 h-5" />
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoAccept ? (user.language === 'ar' ? 'left-1' : 'right-1') : (user.language === 'ar' ? 'right-1' : 'left-1')}`} />
                       </button>
                     </div>
 
@@ -1530,15 +1955,46 @@ function RoomView({
                           const newVal = !autoReject;
                           setAutoReject(newVal);
                           if (newVal) setAutoAccept(false);
-                          updateRoomSettings(false, newVal);
+                          updateRoomSettings(newVal ? false : autoAccept, newVal);
+                          fetch('/api/rooms/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ roomId, username: user.username, settings: { autoAccept: newVal ? false : autoAccept, autoReject: newVal } })
+                          });
                         }}
-                        className={`p-3 rounded-xl transition-all ${autoReject ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                        className={`w-12 h-6 rounded-full transition-all relative ${autoReject ? 'bg-indigo-600' : 'bg-slate-700'}`}
                       >
-                        <UserMinus className="w-5 h-5" />
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoReject ? (user.language === 'ar' ? 'left-1' : 'right-1') : (user.language === 'ar' ? 'right-1' : 'left-1')}`} />
                       </button>
                     </div>
-                  </>
+                  </div>
                 )}
+
+                <div className="flex items-center justify-between">
+                  <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'}`}>
+                    <div className="text-sm font-semibold theme-text-main">{t.sounds}</div>
+                    <div className="text-xs theme-text-sub">{t.soundsSub}</div>
+                  </div>
+                  <button 
+                    onClick={() => setSoundsEnabled(!soundsEnabled)}
+                    className={`p-3 rounded-xl transition-all ${soundsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                  >
+                    {soundsEnabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'}`}>
+                    <div className="text-sm font-semibold theme-text-main">{t.broadcastQuality}</div>
+                    <div className="text-xs theme-text-sub">{t.broadcastQualitySub}</div>
+                  </div>
+                  <button 
+                    onClick={() => setBroadcastQuality(!broadcastQuality)}
+                    className={`p-3 rounded-xl transition-all ${broadcastQuality ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                  >
+                    <Globe className="w-5 h-5" />
+                  </button>
+                </div>
 
                 <div className="pt-6 theme-border border-t">
                   <div className={`${user.language === 'ar' ? 'text-right' : 'text-left'} mb-4`}>
@@ -1587,35 +2043,49 @@ interface PeerVideoProps {
   language: 'en' | 'ar';
 }
 
-function GlobalSearchView({ user, onCall, onBack }: { user: User, onCall: (u: string) => void, onBack: () => void }) {
+function GlobalSearchView({ user, onCall, onBack, onJoinRoom }: { user: User, onCall: (u: string) => void, onBack: () => void, onJoinRoom: (id: string) => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
+  const [roomResults, setRoomResults] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
   const t = TRANSLATIONS[user.language];
 
   const handleSearch = async () => {
-    if (query.length < 2) return;
-    const res = await fetch(`/api/users/search?q=${encodeURIComponent(query)}`);
-    const data = await res.json();
-    setResults(data);
+    if (query.length < 1) return;
+    setLoading(true);
+    try {
+      const [userRes, roomRes] = await Promise.all([
+        fetch(`/api/users/search?q=${encodeURIComponent(query)}`),
+        fetch(`/api/rooms/search?q=${encodeURIComponent(query)}`)
+      ]);
+      const userData = await userRes.json();
+      const roomData = await roomRes.json();
+      setResults(userData);
+      setRoomResults(roomData);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 theme-bg-main">
+    <div className="min-h-screen flex items-center justify-center p-0 md:p-4 theme-bg-main">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-2xl theme-bg-panel backdrop-blur-md theme-border border rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[80vh]"
+        className="w-full max-w-2xl theme-bg-panel backdrop-blur-md theme-border border rounded-none md:rounded-3xl shadow-2xl overflow-hidden flex flex-col h-screen md:h-[80vh]"
       >
-        <div className="p-6 border-b theme-border flex items-center justify-between">
+        <div className="p-4 md:p-6 border-b theme-border flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <button onClick={onBack} className="p-2 hover:opacity-80 rounded-full transition-colors">
-              <ArrowLeft className="w-5 h-5 theme-text-sub" />
+              <ArrowLeft className="w-5 h-5 theme-text-main" />
             </button>
             <h1 className="text-xl font-bold theme-text-main">{t.globalSearch}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative w-64">
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-1 md:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 theme-text-sub opacity-50" />
               <input 
                 type="text" 
@@ -1623,48 +2093,94 @@ function GlobalSearchView({ user, onCall, onBack }: { user: User, onCall: (u: st
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder={t.searchUser}
-                className="w-full theme-bg-main border theme-border rounded-xl pl-10 pr-4 py-2 theme-text-main outline-none focus:ring-2 focus:ring-indigo-500/50"
+                className="w-full theme-bg-main border theme-border rounded-md pl-10 pr-4 py-2 theme-text-main outline-none focus:ring-2 focus:ring-indigo-500/50"
               />
             </div>
             <button 
               onClick={handleSearch}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-sm transition-all"
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-md font-bold text-sm transition-all shadow-lg shadow-indigo-500/20"
             >
               {t.search}
             </button>
           </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           {/* Results List */}
-          <div className="w-1/2 border-r theme-border overflow-y-auto p-4 space-y-2">
-            {Array.from(new Map(results.map(u => [u.username, u])).values()).map((u: any) => (
-              <button 
-                key={u.username}
-                onClick={() => setSelectedUser(u)}
-                className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all ${selectedUser?.username === u.username ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'hover:bg-white/5 theme-text-main'}`}
-              >
-                <img src={u.avatar} alt={u.displayName} className="w-10 h-10 rounded-xl object-cover" />
-                <div className="text-left">
-                  <div className="font-bold text-sm">{u.displayName}</div>
-                  <div className={`text-xs ${selectedUser?.username === u.username ? 'text-white/70' : 'theme-text-sub'}`}>@{u.username}</div>
-                </div>
-              </button>
-            ))}
-            {results.length === 0 && query.length >= 2 && (
-              <div className="text-center py-12 theme-text-sub opacity-50">No users found</div>
+          <div className="w-full md:w-1/2 border-b md:border-b-0 md:border-r theme-border overflow-y-auto p-4 space-y-4">
+            {results.length > 0 && (
+              <div className="space-y-2">
+                <div className="px-3 py-1 text-[10px] font-bold theme-text-sub uppercase tracking-widest">{t.allUsers}</div>
+                {results.map((u: any) => (
+                  <button 
+                    key={u.username}
+                    onClick={() => setSelectedUser(u)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all ${selectedUser?.username === u.username ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'hover:bg-white/5 theme-text-main'}`}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center overflow-hidden">
+                      {u.avatar ? (
+                        <img src={u.avatar} alt={u.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span className="text-xs font-bold text-slate-400">{u.displayName[0].toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-sm">{u.displayName}</div>
+                      <div className={`text-xs ${selectedUser?.username === u.username ? 'text-white/70' : 'theme-text-sub'}`}>@{u.username}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
-            {query.length < 2 && (
-              <div className="text-center py-12 theme-text-sub opacity-50">Type to search users...</div>
+
+            {roomResults.length > 0 && (
+              <div className="space-y-2">
+                <div className="px-3 py-1 text-[10px] font-bold theme-text-sub uppercase tracking-widest">{t.totalRooms}</div>
+                {roomResults.map((r: any) => (
+                  <div 
+                    key={r.id}
+                    className="w-full flex items-center justify-between gap-3 p-3 rounded-2xl transition-all hover:bg-white/5 theme-text-main border theme-border"
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center flex-shrink-0">
+                        <Hash className="w-5 h-5 text-indigo-500" />
+                      </div>
+                      <div className="overflow-hidden text-left">
+                        <div className="text-sm font-bold truncate">{r.tag || r.id}</div>
+                        <div className="text-[10px] opacity-70 truncate">@{r.owner}</div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => onJoinRoom(r.id)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-xl text-xs font-bold transition-all"
+                    >
+                      {t.joinRoom}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {results.length === 0 && roomResults.length === 0 && query.length >= 1 && !loading && (
+              <div className="text-center py-12 theme-text-sub opacity-50">No results found</div>
+            )}
+            {query.length === 0 && (
+              <div className="text-center py-12 theme-text-sub opacity-50">Type to search users or rooms...</div>
             )}
           </div>
 
           {/* User Details */}
-          <div className="w-1/2 p-8 flex flex-col items-center justify-center text-center">
+          <div className="w-full md:w-1/2 p-8 flex flex-col items-center justify-center text-center bg-black/5">
             {selectedUser ? (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={selectedUser.username} className="w-full">
                 <div className="relative inline-block mb-6">
-                  <img src={selectedUser.avatar} alt={selectedUser.displayName} className="w-32 h-32 rounded-3xl border-4 border-indigo-600 shadow-2xl mx-auto" />
+                  <div className="w-32 h-32 rounded-3xl border-4 border-indigo-600 shadow-2xl mx-auto overflow-hidden bg-slate-800 flex items-center justify-center">
+                    {selectedUser.avatar ? (
+                      <img src={selectedUser.avatar} alt={selectedUser.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <span className="text-4xl font-bold text-slate-400">{selectedUser.displayName[0].toUpperCase()}</span>
+                    )}
+                  </div>
                   <div className="absolute -bottom-2 -right-2 bg-emerald-500 w-6 h-6 rounded-full border-4 theme-bg-panel" />
                 </div>
                 <h2 className="text-2xl font-bold theme-text-main mb-1">{selectedUser.displayName}</h2>
