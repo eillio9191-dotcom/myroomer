@@ -87,6 +87,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const [incomingCall, setIncomingCall] = useState<{ callerId: string; callerDisplayName: string; callerAvatar?: string; roomId: string } | null>(null);
 
   useEffect(() => {
+    if (!localStream) return; // Wait for localStream to be ready before connecting to signaling
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${protocol}//${window.location.host}`);
     socketRef.current = socket;
@@ -210,7 +212,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       socket.close();
       peersRef.current.forEach(peer => peer.connection.close());
     };
-  }, [roomId, userId]);
+  }, [roomId, userId, localStream]);
 
   const joinRoom = (isOwner: boolean, initialRoomTag?: string) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -391,6 +393,11 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   };
 
   const createPeer = async (targetId: string, targetUsername: string, targetDisplayName: string, targetAvatar: string | undefined, isInitiator: boolean) => {
+    if (!localStream) {
+      console.warn(`Cannot create peer for ${targetId}: localStream not ready`);
+      return;
+    }
+
     const existingPeer = peersRef.current.get(targetId);
     if (existingPeer) {
       console.log(`Updating existing peer info for ${targetId}`);
@@ -462,15 +469,29 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       }
     };
 
-    // Add local tracks if available
-    if (localStream) {
-      const senders = pc.getSenders();
-      localStream.getTracks().forEach(track => {
-        const alreadyAdded = senders.some(s => s.track?.id === track.id);
-        if (!alreadyAdded) {
-          pc.addTrack(track, localStream);
-        }
-      });
+    // Add local tracks immediately
+    const senders = pc.getSenders();
+    localStream.getTracks().forEach(track => {
+      const alreadyAdded = senders.some(s => s.track?.id === track.id);
+      if (!alreadyAdded) {
+        pc.addTrack(track, localStream);
+      }
+    });
+
+    if (isInitiator) {
+      try {
+        console.log(`Initiating call to ${targetId}`);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socketRef.current?.send(JSON.stringify({
+          type: 'signal',
+          targetId,
+          senderId: userId,
+          signal: { sdp: pc.localDescription }
+        }));
+      } catch (err) {
+        console.error("Initial offer error:", err);
+      }
     }
 
     peersRef.current.set(targetId, peer);
