@@ -1146,6 +1146,7 @@ function RoomView({
   const [preJoinCam, setPreJoinCam] = useState(true);
   const [autoAccept, setAutoAccept] = useState(false);
   const [autoReject, setAutoReject] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   // Fetch room settings on mount
   useEffect(() => {
@@ -1200,11 +1201,13 @@ function RoomView({
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
     }
-  }, [localStream, isPreJoin, isScreenSharing]);
+  }, [localStream, isPreJoin, isScreenSharing, camOn]);
 
   useEffect(() => {
     const initMedia = async () => {
+      if (localStream) return;
       try {
+        setMediaError(null);
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
         stream.getTracks().forEach(t => t.enabled = true);
         setLocalStream(stream);
@@ -1213,12 +1216,13 @@ function RoomView({
         }
         // Initial mute status
         sendMuteStatus(!stream.getAudioTracks()[0].enabled);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Error accessing media devices:", err);
+        setMediaError(err.message || "Could not access camera/microphone");
       }
     };
     initMedia();
-  }, []);
+  }, [localStream]);
 
   useEffect(() => {
     if (localStream && isPreJoin) {
@@ -1301,7 +1305,19 @@ function RoomView({
           <h1 className="text-2xl font-bold theme-text-main mb-6 text-center">{t.preJoin}</h1>
           <div className="aspect-video bg-slate-900 rounded-2xl mb-6 overflow-hidden relative border theme-border">
             <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
-            {!preJoinCam && (
+            {mediaError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 p-6 text-center">
+                <ShieldAlert className="w-12 h-12 text-red-500 mb-4" />
+                <p className="text-sm text-red-500 mb-4">{mediaError}</p>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold"
+                >
+                  Retry Access
+                </button>
+              </div>
+            )}
+            {!preJoinCam && !mediaError && (
               <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
                 <img src={user.avatar} alt={user.displayName} className="w-24 h-24 rounded-full border-4 border-indigo-600" />
               </div>

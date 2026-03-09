@@ -65,8 +65,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   useEffect(() => {
     if (localStream) {
-      peersRef.current.forEach(peer => {
-        // Only add tracks if they haven't been added yet
+      peersRef.current.forEach(async (peer) => {
         const senders = peer.connection.getSenders();
         localStream.getTracks().forEach(track => {
           const alreadyAdded = senders.some(s => s.track?.id === track.id);
@@ -413,6 +412,21 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       }
     };
 
+    pc.onnegotiationneeded = async () => {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socketRef.current?.send(JSON.stringify({
+          type: 'signal',
+          targetId,
+          senderId: userId,
+          signal: { sdp: offer }
+        }));
+      } catch (err) {
+        console.error("Negotiation error:", err);
+      }
+    };
+
     pc.ontrack = (event) => {
       setPeers(prev => {
         const newPeers = new Map<string, Peer>(prev);
@@ -448,20 +462,24 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     const peer = peersRef.current.get(senderId);
     if (!peer) return;
 
-    if (signal.sdp) {
-      await peer.connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-      if (signal.sdp.type === 'offer') {
-        const answer = await peer.connection.createAnswer();
-        await peer.connection.setLocalDescription(answer);
-        socketRef.current?.send(JSON.stringify({
-          type: 'signal',
-          targetId: senderId,
-          senderId: userId,
-          signal: { sdp: answer }
-        }));
+    try {
+      if (signal.sdp) {
+        await peer.connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        if (signal.sdp.type === 'offer') {
+          const answer = await peer.connection.createAnswer();
+          await peer.connection.setLocalDescription(answer);
+          socketRef.current?.send(JSON.stringify({
+            type: 'signal',
+            targetId: senderId,
+            senderId: userId,
+            signal: { sdp: answer }
+          }));
+        }
+      } else if (signal.candidate) {
+        await peer.connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
       }
-    } else if (signal.candidate) {
-      await peer.connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+    } catch (err) {
+      console.error("Signal handling error:", err);
     }
   };
 
