@@ -104,6 +104,8 @@ const TRANSLATIONS = {
     autoAcceptSub: "Automatically approve all join requests",
     autoRejectSub: "Automatically reject all join requests",
     confirmDelete: "Are you sure you want to delete this room?",
+    roomExists: "Room already exists and is owned by someone else.",
+    roomNotFound: "Room not found. Please create it first.",
     lobbySub: "The room owner will review your request shortly.",
     offline: "No Internet Connection",
     offlineSub: "Please check your network settings.",
@@ -197,6 +199,8 @@ const TRANSLATIONS = {
     autoAcceptSub: "الموافقة تلقائياً على جميع طلبات الانضمام",
     autoRejectSub: "رفض تلقائياً جميع طلبات الانضمام",
     confirmDelete: "هل أنت متأكد أنك تريد حذف هذه الغرفة؟",
+    roomExists: "الغرفة موجودة بالفعل ومملوكة لشخص آخر.",
+    roomNotFound: "الغرفة غير موجودة. يرجى إنشاؤها أولاً.",
     lobbySub: "سيقوم مالك الغرفة بمراجعة طلبك قريباً.",
     offline: "لا يوجد اتصال بالإنترنت",
     offlineSub: "يرجى التحقق من إعدادات الشبكة الخاصة بك.",
@@ -448,13 +452,31 @@ export default function App() {
 
             <div className="grid grid-cols-2 gap-4">
               <button
-                onClick={() => {
+                onClick={async () => {
                   const id = roomInput.trim() || Math.random().toString(36).substring(7);
-                  setRoomId(id);
-                  setRoomTag(roomTagInput.trim() || t.room);
-                  setUser({ ...user, ownedRooms: [...(user.ownedRooms || []), id] });
-                  window.history.pushState({}, '', `?room=${id}`);
-                  setIsJoined(true);
+                  const tag = roomTagInput.trim() || t.room;
+                  
+                  try {
+                    const res = await fetch('/api/rooms/create', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ roomId: id, username: user.username, roomTag: tag })
+                    });
+                    
+                    if (!res.ok) {
+                      const data = await res.json();
+                      alert(data.error || t.roomExists);
+                      return;
+                    }
+                    
+                    setRoomId(id);
+                    setRoomTag(tag);
+                    setUser({ ...user, ownedRooms: [...(user.ownedRooms || []), id] });
+                    window.history.pushState({}, '', `?room=${id}`);
+                    setIsJoined(true);
+                  } catch (err) {
+                    console.error(err);
+                  }
                 }}
                 className="flex flex-col items-center justify-center gap-2 p-6 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl transition-all shadow-lg shadow-indigo-500/20 group"
               >
@@ -463,12 +485,22 @@ export default function App() {
               </button>
               
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (roomInput.trim()) {
-                    setRoomId(roomInput.trim());
-                    setRoomTag(roomTagInput.trim() || t.room);
-                    window.history.pushState({}, '', `?room=${roomInput.trim()}`);
-                    setIsJoined(true);
+                    try {
+                      const res = await fetch(`/api/rooms/exists?roomId=${roomInput.trim()}`);
+                      const data = await res.json();
+                      if (!data.exists) {
+                        alert(t.roomNotFound);
+                        return;
+                      }
+                      setRoomId(roomInput.trim());
+                      setRoomTag(roomTagInput.trim() || t.room);
+                      window.history.pushState({}, '', `?room=${roomInput.trim()}`);
+                      setIsJoined(true);
+                    } catch (err) {
+                      console.error(err);
+                    }
                   }
                 }}
                 disabled={!roomInput.trim()}
@@ -499,7 +531,7 @@ export default function App() {
       setRoomId={setRoomId}
       roomTag={roomTag}
       setRoomTag={setRoomTag}
-      userId={USER_ID} 
+      userId={user.username} 
       user={user}
       setUser={setUser}
       soundsEnabled={soundsEnabled}
@@ -1174,6 +1206,7 @@ function RoomView({
     const initMedia = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        stream.getTracks().forEach(t => t.enabled = true);
         setLocalStream(stream);
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;

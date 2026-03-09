@@ -477,6 +477,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const toggleMedia = async (type: 'audio' | 'video') => {
     if (!localStream) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      stream.getTracks().forEach(t => t.enabled = true);
       setLocalStream(stream);
       peersRef.current.forEach(peer => {
         stream.getTracks().forEach(track => peer.connection.addTrack(track, stream));
@@ -516,6 +517,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       });
 
       setIsScreenSharing(true);
+      screenStream.getTracks().forEach(t => t.enabled = true);
       const videoTrack = screenStream.getVideoTracks()[0];
       
       peersRef.current.forEach(peer => {

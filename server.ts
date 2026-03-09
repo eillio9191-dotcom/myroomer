@@ -186,6 +186,22 @@ async function startServer() {
     res.json(settings);
   });
 
+  app.post("/api/rooms/create", async (req, res) => {
+    const { roomId, username, roomTag } = req.body;
+    if (roomOwners.has(roomId)) {
+      return res.status(400).json({ error: "Room already exists and is owned by someone else." });
+    }
+    roomOwners.set(roomId, username);
+    roomTags.set(roomId, roomTag || roomId);
+    await saveData();
+    res.json({ success: true });
+  });
+
+  app.get("/api/rooms/exists", (req, res) => {
+    const roomId = req.query.roomId as string;
+    res.json({ exists: roomOwners.has(roomId) });
+  });
+
   app.post("/api/rooms/settings", async (req, res) => {
     const { roomId, username, settings } = req.body;
     if (roomOwners.get(roomId) !== username) return res.status(403).json({ error: "Not owner" });
@@ -282,14 +298,7 @@ async function startServer() {
 
           // Handle room ownership
           let ownerId = roomOwners.get(roomId);
-          if (!ownerId) {
-            // First person to join a non-owned room becomes owner
-            roomOwners.set(roomId, userId);
-            roomTags.set(roomId, roomTag || roomId);
-            ownerId = userId;
-            await saveData();
-            ws.send(JSON.stringify({ type: "you-are-owner", roomId }));
-          } else if (ownerId === userId) {
+          if (ownerId === userId) {
             ws.send(JSON.stringify({ type: "you-are-owner", roomId }));
           }
 
