@@ -1200,8 +1200,11 @@ function RoomView({
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
+      if (camOn) {
+        localVideoRef.current.play().catch(e => console.warn("Local video play error:", e));
+      }
     }
-  }, [localStream, isPreJoin, isScreenSharing, camOn]);
+  }, [localStream, isPreJoin, isScreenSharing, camOn, spotlightId]);
 
   useEffect(() => {
     const initMedia = async () => {
@@ -2271,6 +2274,7 @@ const PeerVideo: React.FC<PeerVideoProps> = ({ peer, onClick, onMaximize, t, lan
   useEffect(() => {
     if (videoRef.current && peer.stream) {
       videoRef.current.srcObject = peer.stream;
+      videoRef.current.play().catch(e => console.warn("Peer video play error:", e));
     }
   }, [peer.stream]);
 
@@ -2321,6 +2325,7 @@ const SpotlightPeerVideo: React.FC<{ peer: Peer, onMinimize: () => void, t: any 
   useEffect(() => {
     if (videoRef.current && peer.stream) {
       videoRef.current.srcObject = peer.stream;
+      videoRef.current.play().catch(e => console.warn("Spotlight peer video play error:", e));
     }
   }, [peer.stream]);
 
@@ -2353,6 +2358,7 @@ const MiniPeerVideo: React.FC<{ peer: Peer }> = ({ peer }) => {
   useEffect(() => {
     if (videoRef.current && peer.stream) {
       videoRef.current.srcObject = peer.stream;
+      videoRef.current.play().catch(e => console.warn("Mini peer video play error:", e));
     }
   }, [peer.stream]);
 

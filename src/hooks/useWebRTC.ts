@@ -52,15 +52,15 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:stun.services.mozilla.com' },
       { urls: 'stun:bn-turn2.xirsys.com' },
-      // Add TURN servers here for relay support when P2P fails
       ...((import.meta as any).env.VITE_TURN_URL ? [{
         urls: (import.meta as any).env.VITE_TURN_URL,
         username: (import.meta as any).env.VITE_TURN_USERNAME,
         credential: (import.meta as any).env.VITE_TURN_PASSWORD
       }] : [])
     ],
-    iceCandidatePoolSize: 10,
   };
 
   useEffect(() => {
@@ -390,6 +390,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   };
 
   const createPeer = async (targetId: string, targetUsername: string, targetDisplayName: string, targetAvatar: string | undefined, isInitiator: boolean) => {
+    console.log(`Creating peer for ${targetId}, initiator: ${isInitiator}`);
     const pc = new RTCPeerConnection(iceServers);
 
     const peer: Peer = {
@@ -398,7 +399,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       displayName: targetDisplayName,
       avatar: targetAvatar,
       connection: pc,
-      isMuted: false // Default to false, will be updated by mute-status
+      isMuted: false
     };
 
     pc.onicecandidate = (event) => {
@@ -413,14 +414,18 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     };
 
     pc.onnegotiationneeded = async () => {
+      if (!isInitiator) return;
       try {
+        if (pc.signalingState !== 'stable') return;
+        console.log(`Negotiation needed for ${targetId}`);
         const offer = await pc.createOffer();
+        if (pc.signalingState !== 'stable') return;
         await pc.setLocalDescription(offer);
         socketRef.current?.send(JSON.stringify({
           type: 'signal',
           targetId,
           senderId: userId,
-          signal: { sdp: offer }
+          signal: { sdp: pc.localDescription }
         }));
       } catch (err) {
         console.error("Negotiation error:", err);
@@ -428,6 +433,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     };
 
     pc.ontrack = (event) => {
+      console.log(`Received remote track from ${targetId}`);
       setPeers(prev => {
         const newPeers = new Map<string, Peer>(prev);
         const existing = newPeers.get(targetId);
@@ -438,20 +444,13 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       });
     };
 
+    pc.oniceconnectionstatechange = () => {
+      console.log(`ICE connection state with ${targetId}: ${pc.iceConnectionState}`);
+    };
+
     // Add local tracks if available
     if (localStream) {
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-    }
-
-    if (isInitiator) {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socketRef.current?.send(JSON.stringify({
-        type: 'signal',
-        targetId,
-        senderId: userId,
-        signal: { sdp: offer }
-      }));
     }
 
     peersRef.current.set(targetId, peer);
@@ -464,6 +463,14 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     try {
       if (signal.sdp) {
+        console.log(`Received SDP ${signal.sdp.type} from ${senderId}`);
+        
+        // Handle collision (glare)
+        if (signal.sdp.type === 'offer' && peer.connection.signalingState !== 'stable') {
+          console.log("SDP Offer collision detected, ignoring incoming offer");
+          return;
+        }
+
         await peer.connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
         if (signal.sdp.type === 'offer') {
           const answer = await peer.connection.createAnswer();
@@ -472,11 +479,15 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
             type: 'signal',
             targetId: senderId,
             senderId: userId,
-            signal: { sdp: answer }
+            signal: { sdp: peer.connection.localDescription }
           }));
         }
       } else if (signal.candidate) {
-        await peer.connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        try {
+          await peer.connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } catch (e) {
+          console.warn("Error adding received ice candidate", e);
+        }
       }
     } catch (err) {
       console.error("Signal handling error:", err);
