@@ -29,11 +29,11 @@ export interface QualityPreset {
 }
 
 export const QUALITY_PRESETS: Record<QualityLevel, QualityPreset> = {
-  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 4000000 },
-  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 2000000 },
-  '480': { width: 854, height: 480, frameRate: 30, bitrate: 1000000 },
-  '360': { width: 640, height: 360, frameRate: 30, bitrate: 600000 },
-  '240': { width: 426, height: 240, frameRate: 15, bitrate: 300000 },
+  '1080': { width: 1920, height: 1080, frameRate: 30, bitrate: 8000000 }, // كان 4Mbps
+  '720': { width: 1280, height: 720, frameRate: 30, bitrate: 4000000 },  // كان 2Mbps
+  '480': { width: 854, height: 480, frameRate: 30, bitrate: 2000000 },  // كان 1Mbps
+  '360': { width: 640, height: 360, frameRate: 30, bitrate: 1200000 }, // كان 600Kbps
+  '240': { width: 426, height: 240, frameRate: 15, bitrate: 600000 },   // كان 300Kbps
 };
 
 export function useWebRTC(roomId: string, userId: string, username: string, displayName: string, avatar?: string) {
@@ -57,13 +57,80 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       { urls: 'stun:stun.services.mozilla.com' },
       { urls: 'stun:bn-turn2.xirsys.com' },
       ...((import.meta as any).env.VITE_TURN_URL ? [{
-        urls: (import.meta as any).env.VITE_TURN_URL,
+        urls: (import.meta as any).env.VITE_TURN_URL.split(','),
         username: (import.meta as any).env.VITE_TURN_USERNAME,
         credential: (import.meta as any).env.VITE_TURN_PASSWORD
       }] : [])
     ],
   };
-
+  
+  // Debug: تحقق من قراءة متغيرات البيئة
+  console.log('TURN URL:', (import.meta as any).env.VITE_TURN_URL);
+  console.log('TURN Username:', (import.meta as any).env.VITE_TURN_USERNAME);
+  console.log('TURN Password:', (import.meta as any).env.VITE_TURN_PASSWORD ? '***' : 'undefined');
+  // Manual Quality Control
+const [userManuallyChanged, setUserManuallyChanged] = useState(false);
+ 
+// Adaptive Quality Functions
+const detectNetworkQuality = async (): Promise<number> => {
+  try {
+    const connection = peersRef.current.values().next().value?.connection;
+    if (!connection) return 5; // default medium quality
+ 
+    const stats = await connection.getStats();
+    let bandwidth = 5; // default Mbps
+      
+    stats.forEach(report => {
+      if (report.type === 'outbound-rtp' && report.kind === 'video') {
+        // Estimate bandwidth from bytes sent
+        const bytesSent = report.bytesSent || 0;
+        const timestamp = report.timestamp || Date.now();
+        // Simple bandwidth estimation (would need proper calculation in production)
+        bandwidth = Math.max(1, Math.min(20, bytesSent / 1000000)); // 1-20 Mbps estimate
+      }
+    });
+ 
+    return bandwidth;
+  } catch (error) {
+    console.error('Error detecting network quality:', error);
+    return 5; // fallback to medium quality
+  }
+};
+ 
+const adaptiveQuality = (networkSpeed: number): QualityLevel => {
+  if (networkSpeed < 1) return '240';
+  if (networkSpeed < 3) return '360';
+  if (networkSpeed < 5) return '480';
+  if (networkSpeed < 10) return '720';
+  return '1080';
+};
+ 
+const checkAndAdaptQuality = async () => {
+  // Don't interfere if user manually changed quality
+  if (userManuallyChanged) return;
+    
+  const networkSpeed = await detectNetworkQuality();
+  const suggestedQuality = adaptiveQuality(networkSpeed);
+    
+  if (suggestedQuality !== quality) {
+    console.log(`Adaptive quality: ${networkSpeed}Mbps → ${suggestedQuality}p`);
+    setQuality(suggestedQuality);
+  }
+};
+ 
+const handleManualQualityChange = (newQuality: QualityLevel) => {
+  setUserManuallyChanged(true); // Stop adaptive changes
+  setQuality(newQuality);
+  console.log(`Manual quality set to: ${newQuality}p`);
+};
+ 
+useEffect(() => {
+  if (localStream && peersRef.current.size > 0) {
+    const qualityCheckInterval = setInterval(checkAndAdaptQuality, 5000); // Check every 5 seconds
+    return () => clearInterval(qualityCheckInterval);
+  }
+}, [localStream, quality, userManuallyChanged]);
+ 
   useEffect(() => {
     if (localStream) {
       peersRef.current.forEach(async (peer) => {
@@ -87,8 +154,6 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const [incomingCall, setIncomingCall] = useState<{ callerId: string; callerDisplayName: string; callerAvatar?: string; roomId: string } | null>(null);
 
   useEffect(() => {
-    if (!localStream) return; // Wait for localStream to be ready before connecting to signaling
-
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${protocol}//${window.location.host}`);
     socketRef.current = socket;
@@ -212,7 +277,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       socket.close();
       peersRef.current.forEach(peer => peer.connection.close());
     };
-  }, [roomId, userId, localStream]);
+  }, [roomId, userId]);
 
   const joinRoom = (isOwner: boolean, initialRoomTag?: string) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -326,8 +391,19 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
         } catch (err) {
           console.error("Error applying constraints:", err);
           const newStream = await navigator.mediaDevices.getUserMedia({
-            video: { width: preset.width, height: preset.height, frameRate: preset.frameRate },
-            audio: true
+            video: {
+              width: { ideal: preset.width, max: 1920 },
+              height: { ideal: preset.height, max: 1080 },
+              frameRate: { ideal: 30, max: 60 },
+              facingMode: "user",
+              aspectRatio: 16/9
+            },
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              sampleRate: 48000
+            }
           });
           const newVideoTrack = newStream.getVideoTracks()[0];
           const oldVideoTrack = localStream.getVideoTracks()[0];
@@ -393,11 +469,6 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   };
 
   const createPeer = async (targetId: string, targetUsername: string, targetDisplayName: string, targetAvatar: string | undefined, isInitiator: boolean) => {
-    if (!localStream) {
-      console.warn(`Cannot create peer for ${targetId}: localStream not ready`);
-      return;
-    }
-
     const existingPeer = peersRef.current.get(targetId);
     if (existingPeer) {
       console.log(`Updating existing peer info for ${targetId}`);
@@ -469,29 +540,15 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       }
     };
 
-    // Add local tracks immediately
-    const senders = pc.getSenders();
-    localStream.getTracks().forEach(track => {
-      const alreadyAdded = senders.some(s => s.track?.id === track.id);
-      if (!alreadyAdded) {
-        pc.addTrack(track, localStream);
-      }
-    });
-
-    if (isInitiator) {
-      try {
-        console.log(`Initiating call to ${targetId}`);
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socketRef.current?.send(JSON.stringify({
-          type: 'signal',
-          targetId,
-          senderId: userId,
-          signal: { sdp: pc.localDescription }
-        }));
-      } catch (err) {
-        console.error("Initial offer error:", err);
-      }
+    // Add local tracks if available
+    if (localStream) {
+      const senders = pc.getSenders();
+      localStream.getTracks().forEach(track => {
+        const alreadyAdded = senders.some(s => s.track?.id === track.id);
+        if (!alreadyAdded) {
+          pc.addTrack(track, localStream);
+        }
+      });
     }
 
     peersRef.current.set(targetId, peer);

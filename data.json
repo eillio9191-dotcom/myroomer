@@ -1,0 +1,18 @@
+{
+  "users": {
+    "1": {
+      "username": "1",
+      "displayName": "1",
+      "password": "1",
+      "theme": "dark",
+      "language": "en"
+    }
+  },
+  "roomOwners": {
+    "1": "1"
+  },
+  "roomTags": {
+    "1": "Room"
+  },
+  "roomSettings": {}
+}

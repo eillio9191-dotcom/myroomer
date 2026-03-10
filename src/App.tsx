@@ -119,6 +119,8 @@ const TRANSLATIONS = {
     unban: "Unban User",
     changePassword: "Change Password",
     remove: "Remove",
+    installApp: "Install",
+    installAppSub: "Install MyRoomer on your device"
   },
   ar: {
     room: "الغرفة",
@@ -214,6 +216,8 @@ const TRANSLATIONS = {
     unban: "إلغاء الحظر",
     changePassword: "تغيير كلمة المرور",
     remove: "إزالة",
+    installApp: "تثبيت",
+    installAppSub: "تثبيت MyRoomer على جهازك"
   }
 };
 
@@ -235,6 +239,26 @@ export default function App() {
   const [roomTagInput, setRoomTagInput] = useState('');
   const [roomTag, setRoomTag] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  // PWA Install Prompt
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   // Persistence
   useEffect(() => {
@@ -285,7 +309,7 @@ export default function App() {
   }, []);
 
   if (!user) {
-    return <LoginView onLogin={setUser} language="en" />;
+    return <LoginView onLogin={setUser} language="en" deferredPrompt={deferredPrompt} onInstall={handleInstallClick} />;
   }
 
   if (isAdminOpen) {
@@ -406,11 +430,13 @@ export default function App() {
           className="w-full max-w-lg"
         >
           <div className="flex flex-col items-center mb-12">
-            <div className="w-20 h-20 bg-indigo-600 rounded-2xl flex items-center justify-center mb-6 shadow-xl shadow-indigo-500/20">
-              <Video className="text-white w-10 h-10" />
+            <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl flex items-center justify-center mb-6 shadow-2xl shadow-indigo-500/40 border border-white/20">
+              <Video className="text-white w-10 h-10 drop-shadow-lg" />
             </div>
-            <h1 className="text-4xl font-black tracking-tight theme-text-main mb-2">{t.myRoomer}</h1>
-            <p className="theme-text-sub text-center max-w-sm">
+            <h1 className="text-5xl font-black tracking-tighter theme-text-main mb-2 bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60 drop-shadow-sm">
+              {t.myRoomer}
+            </h1>
+            <p className="theme-text-sub text-center max-w-sm text-sm leading-relaxed opacity-80">
               {t.homeSub}
             </p>
           </div>
@@ -423,6 +449,15 @@ export default function App() {
               <Search className="w-5 h-5 text-indigo-500" />
               <span className="font-bold">{t.globalSearch}</span>
             </button>
+
+            {deferredPrompt && (
+              <button 
+                onClick={handleInstallClick}
+                className="flex items-center gap-2 px-4 py-2 theme-text-sub hover:theme-text-main transition-all text-sm font-medium underline underline-offset-4 decoration-indigo-500/30"
+              >
+                {t.installApp}
+              </button>
+            )}
           </div>
 
           <div className="theme-bg-panel backdrop-blur-md theme-border border p-8 rounded-3xl shadow-2xl space-y-6">
@@ -520,6 +555,21 @@ export default function App() {
               </div>
             )}
           </div>
+
+          {deferredPrompt && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="mt-12 text-center"
+            >
+              <button 
+                onClick={handleInstallClick}
+                className="inline-flex items-center gap-2 theme-text-sub hover:theme-text-main transition-colors text-sm font-medium underline underline-offset-4 decoration-indigo-500/30"
+              >
+                {t.installApp}
+              </button>
+            </motion.div>
+          )}
         </motion.div>
       </div>
     );
@@ -689,7 +739,7 @@ function AdminDashboard({ onBack, language, adminUsername }: { onBack: () => voi
   );
 }
 
-function ProfileView({ user, setUser, isOnline, onSave, onBack, onOpenAdmin }: { user: User, setUser: (u: User) => void, isOnline: boolean, onSave: (u: User) => void, onBack: () => void, onOpenAdmin: () => void }) {
+function ProfileView({ user, setUser, isOnline, onSave, onBack, onOpenAdmin, deferredPrompt, onInstall }: { user: User, setUser: (u: User) => void, isOnline: boolean, onSave: (u: User) => void, onBack: () => void, onOpenAdmin: () => void, deferredPrompt: any, onInstall: () => void }) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [avatar, setAvatar] = useState(user.avatar);
   const [theme, setTheme] = useState(user.theme);
@@ -912,13 +962,27 @@ function ProfileView({ user, setUser, isOnline, onSave, onBack, onOpenAdmin }: {
               <span className="text-sm font-bold text-red-500">{t.adminDashboard}</span>
             </button>
           )}
+
+          {/* PWA Install Button */}
+          {deferredPrompt && (
+            <button
+              onClick={onInstall}
+              className="w-full mt-4 p-4 theme-bg-panel border theme-border hover:theme-border-main rounded-2xl flex items-center justify-center gap-3 transition-all group"
+            >
+              <Upload className="w-5 h-5 theme-text-sub group-hover:theme-text-main transition-colors" />
+              <div className="text-left">
+                <div className="text-sm font-bold theme-text-main">{t.installApp}</div>
+                <div className="text-[10px] theme-text-sub">{t.installAppSub}</div>
+              </div>
+            </button>
+          )}
         </div>
       </motion.div>
     </div>
   );
 }
 
-function LoginView({ onLogin, language }: { onLogin: (u: User) => void, language: 'en' | 'ar' }) {
+function LoginView({ onLogin, language, deferredPrompt, onInstall }: { onLogin: (u: User) => void, language: 'en' | 'ar', deferredPrompt: any, onInstall: () => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -949,11 +1013,11 @@ function LoginView({ onLogin, language }: { onLogin: (u: User) => void, language
         className="w-full max-w-md theme-bg-panel border theme-border p-8 rounded-3xl shadow-2xl"
       >
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 mx-auto shadow-lg shadow-indigo-500/20">
-            <Video className="text-white w-8 h-8" />
+          <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl flex items-center justify-center mb-6 mx-auto shadow-2xl shadow-indigo-500/40 border border-white/20">
+            <Video className="text-white w-10 h-10 drop-shadow-lg" />
           </div>
-          <h1 className="text-2xl font-bold theme-text-main">{t.loginTitle}</h1>
-          <p className="theme-text-sub text-sm mt-1">{t.loginSub}</p>
+          <h1 className="text-3xl font-black tracking-tighter theme-text-main mb-1">{t.loginTitle}</h1>
+          <p className="theme-text-sub text-sm mt-1 opacity-70">{t.loginSub}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -987,6 +1051,17 @@ function LoginView({ onLogin, language }: { onLogin: (u: User) => void, language
             {t.signIn}
           </button>
         </form>
+
+        {deferredPrompt && (
+          <div className="mt-8 pt-6 border-t theme-border">
+            <button 
+              onClick={onInstall}
+              className="w-full text-center py-2 theme-text-sub hover:theme-text-main transition-all font-bold text-sm underline underline-offset-4 decoration-indigo-500/30"
+            >
+              {t.installApp}
+            </button>
+          </div>
+        )}
       </motion.div>
     </div>
   );
@@ -1099,7 +1174,7 @@ function GlobalSearch({ onCall, language, onJoinRoom }: { onCall: (username: str
 }
 
 function RoomView({ 
-  roomId, setRoomId, roomTag: initialRoomTag, setRoomTag: setAppRoomTag, userId, user, setUser, soundsEnabled, setSoundsEnabled, isOnline, onLeave 
+  roomId, setRoomId, roomTag: initialRoomTag, setRoomTag: setAppRoomTag, userId, user, setUser, soundsEnabled, setSoundsEnabled, isOnline, onLeave, deferredPrompt, onInstall 
 }: { 
   roomId: string; 
   setRoomId: (id: string) => void;
@@ -1112,6 +1187,8 @@ function RoomView({
   setSoundsEnabled: (val: boolean) => void;
   isOnline: boolean;
   onLeave: () => void;
+  deferredPrompt: any;
+  onInstall: () => void;
 }) {
   const t = TRANSLATIONS[user.language];
 
@@ -1676,6 +1753,7 @@ function RoomView({
                       peer={peers.get(spotlightId)!} 
                       onMinimize={() => setSpotlightId(null)}
                       t={t}
+                      language={user.language}
                     />
                   )}
                   <button 
@@ -2071,6 +2149,15 @@ function RoomView({
                 </div>
 
                 <div className="pt-6 theme-border border-t">
+                  {deferredPrompt && (
+                    <button 
+                      onClick={onInstall}
+                      className="w-full mb-3 theme-bg-main border theme-border hover:theme-border-main theme-text-main font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {t.installApp}
+                    </button>
+                  )}
                   <button 
                     onClick={() => setIsSettingsOpen(false)}
                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-all"
@@ -2291,7 +2378,7 @@ const PeerVideo: React.FC<PeerVideoProps> = ({ peer, onClick, onMaximize, t, lan
           ref={videoRef}
           autoPlay
           playsInline
-          className="w-full h-full object-cover"
+          className={`w-full h-full object-cover ${!peer.stream ? 'hidden' : ''}`}
         />
         {!peer.stream && (
           <div className="absolute inset-0 flex items-center justify-center theme-bg-main">
@@ -2318,7 +2405,7 @@ const PeerVideo: React.FC<PeerVideoProps> = ({ peer, onClick, onMaximize, t, lan
   );
 }
 
-const SpotlightPeerVideo: React.FC<{ peer: Peer, onMinimize: () => void, t: any }> = ({ peer, t }) => {
+const SpotlightPeerVideo: React.FC<{ peer: Peer, onMinimize: () => void, t: any, language: 'en' | 'ar' }> = ({ peer, onMinimize, t, language }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const isSpeaking = useAudioActivity(peer.stream || null, !peer.isMuted);
 
@@ -2330,12 +2417,12 @@ const SpotlightPeerVideo: React.FC<{ peer: Peer, onMinimize: () => void, t: any 
   }, [peer.stream]);
 
   return (
-    <div className="w-full h-full relative">
+    <div className={`w-full h-full relative border-4 transition-colors duration-300 ${isSpeaking ? 'border-emerald-500' : peer.isMuted ? 'border-rose-500' : 'border-transparent'}`}>
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        className="w-full h-full object-contain"
+        className={`w-full h-full object-contain ${!peer.stream ? 'hidden' : ''}`}
       />
       {!peer.stream && (
         <div className="absolute inset-0 flex items-center justify-center theme-bg-main">
@@ -2344,7 +2431,7 @@ const SpotlightPeerVideo: React.FC<{ peer: Peer, onMinimize: () => void, t: any 
           </div>
         </div>
       )}
-      <div className="absolute bottom-6 left-6 flex items-center gap-3 px-4 py-2 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 shadow-lg">
+      <div className={`absolute bottom-6 ${language === 'ar' ? 'right-6' : 'left-6'} flex items-center gap-3 px-4 py-2 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 shadow-lg`}>
         <div className={`w-3 h-3 rounded-full ${isSpeaking ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
         <span className="text-sm font-bold text-white tracking-wide">{peer.displayName}</span>
         {peer.isMuted && <MicOff className="w-4 h-4 text-rose-500 ml-1" />}
@@ -2363,11 +2450,20 @@ const MiniPeerVideo: React.FC<{ peer: Peer }> = ({ peer }) => {
   }, [peer.stream]);
 
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      className="w-full h-full object-cover pointer-events-none"
-    />
+    <div className="w-full h-full relative">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className={`w-full h-full object-cover pointer-events-none ${!peer.stream ? 'hidden' : ''}`}
+      />
+      {!peer.stream && (
+        <div className="absolute inset-0 flex items-center justify-center theme-bg-main">
+          <div className="w-12 h-12 rounded-full theme-bg-panel flex items-center justify-center text-lg font-bold theme-text-sub overflow-hidden border theme-border">
+            {peer.avatar ? <img src={peer.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : peer.displayName[0].toUpperCase()}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
