@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "displayName": { "type": "string" },
+        "avatar": { "type": "string" },
+        "password": { "type": "string" },
+        "theme": { "type": "string", "enum": ["light", "dark"] },
+        "language": { "type": "string", "enum": ["en", "ar"] },
+        "isBanned": { "type": "boolean" },
+        "blockedUsers": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["username"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "Room data and settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "owner": { "type": "string" },
+        "tag": { "type": "string" },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "autoAccept": { "type": "boolean" },
+            "autoReject": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["id", "owner"]
+    }
+  },
+  "firestore": {
+    "users/{username}": {
+      "schema": "User",
+      "description": "User profiles indexed by username"
+    },
+    "rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Room data indexed by normalized room ID"
+    }
+  }
+}

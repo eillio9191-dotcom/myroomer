@@ -1,0 +1,33 @@
+{
+  "users": {},
+  "roomOwners": {
+    "1": "1",
+    "a": "2",
+    "s": "A",
+    "f": "A"
+  },
+  "roomTags": {
+    "1": "Room",
+    "a": "Room",
+    "s": "Room",
+    "f": "Room"
+  },
+  "roomSettings": {
+    "1": {
+      "autoAccept": false,
+      "autoReject": false
+    },
+    "a": {
+      "autoAccept": false,
+      "autoReject": false
+    },
+    "s": {
+      "autoAccept": false,
+      "autoReject": false
+    },
+    "f": {
+      "autoAccept": false,
+      "autoReject": false
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "MyRoomer",
+  "description": "A modern real-time voice, video, and screen sharing platform for virtual rooms.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ]
+}

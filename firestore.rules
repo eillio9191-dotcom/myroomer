@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // User Profile Validation
+    function isValidUser(data) {
+      return data.keys().hasAll(['username']) &&
+             data.username is string && data.username.size() <= 64 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+             (!('avatar' in data) || (data.avatar is string && data.avatar.size() <= 500)) &&
+             (!('password' in data) || (data.password is string && data.password.size() <= 100)) &&
+             (!('isBanned' in data) || (data.isBanned is bool));
+    }
+
+    // Room Validation
+    function isValidRoom(data) {
+      return data.keys().hasAll(['owner']) &&
+             data.owner is string && data.owner.size() <= 64 &&
+             (!('tag' in data) || (data.tag is string && data.tag.size() <= 100)) &&
+             (!('ownerKey' in data) || (data.ownerKey is string && data.ownerKey.size() <= 20)) &&
+             (!('settings' in data) || (data.settings is map));
+    }
+
+    match /users/{username} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}
