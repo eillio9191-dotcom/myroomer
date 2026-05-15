@@ -326,9 +326,11 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
           }
           break;
         case 'signal':
+          if (msg.targetId !== userId) return;
           await handleSignal(msg.senderId, msg.signal);
           break;
         case 'user-left':
+
           removePeer(msg.userId);
           break;
         case 'chat':
