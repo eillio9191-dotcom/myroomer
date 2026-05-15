@@ -9,7 +9,16 @@
     "build:server": "esbuild server/index.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "build": "npm run build:client && npm run build:server",
     "start": "node dist/server.cjs",
-    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "firebase:install": "npm install -g firebase-tools",
+    "firebase:login": "firebase login",
+    "firebase:use": "firebase use gen-lang-client-0360431546",
+    "firebase:functions:install": "cd functions && npm install",
+    "firebase:build": "npm run build && npm run firebase:functions:install",
+    "firebase:deploy:functions": "firebase deploy --only functions",
+    "firebase:deploy:hosting": "firebase deploy --only hosting",
+    "firebase:deploy": "firebase deploy",
+    "firebase:emulate": "firebase emulators:start"
   },
   "dependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",

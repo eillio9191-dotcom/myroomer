@@ -1,4 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getDatabase, ref, onValue, off, push, set, onDisconnect, onChildAdded, onChildRemoved } from 'firebase/database';
+import firebaseConfig from '../../firebase-applet-config.json';
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
 
 export interface Peer {
   userId: string;
@@ -60,7 +67,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const [isMutedAll, setIsMutedAll] = useState(false);
   const [quality, setQuality] = useState<QualityLevel>('720');
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<any>(null); // Will hold Firebase database references
   const peersRef = useRef<Map<string, Peer>>(new Map());
   const pendingJoinRef = useRef<{ isOwner: boolean; initialRoomTag?: string } | null>(null);
   const pendingPeerRequestsRef = useRef<Map<string, { targetUsername: string; targetDisplayName: string; targetAvatar?: string; isInitiator: boolean }>>(new Map());
@@ -84,11 +91,19 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     ],
   };
 
-  // Update tracks for all peers when localStream changes
-  const canSendSocket = () => socketRef.current?.readyState === WebSocket.OPEN;
+  // Firebase-based messaging instead of WebSocket
+  const canSendSocket = () => true; // Always true for Firebase
+
+  const sendToFirebase = (message: any) => {
+    const roomRef = ref(database, `rooms/${roomId}/messages`);
+    push(roomRef, {
+      ...message,
+      timestamp: Date.now(),
+      senderId: userId
+    });
+  };
 
   const flushPendingPeerRequests = async () => {
-    if (!canSendSocket()) return;
     const queued = Array.from(pendingPeerRequestsRef.current.entries()) as Array<[string, { targetUsername: string; targetDisplayName: string; targetAvatar?: string; isInitiator: boolean }]>
     pendingPeerRequestsRef.current.clear();
 
@@ -184,55 +199,35 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   useEffect(() => {
     if (!roomId) {
-      console.log('useEffect: no roomId, skipping socket creation');
-      return; // Only depend on roomId, NOT localStream
+      console.log('useEffect: no roomId, skipping Firebase setup');
+      return;
     }
 
-    console.log('useEffect: creating WebSocket for roomId:', roomId);
+    console.log('useEffect: setting up Firebase listeners for roomId:', roomId);
 
     pendingJoinRef.current = null;
     pendingPeerRequestsRef.current.clear();
 
-    // Close previous socket if it exists
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      console.log('Closing previous socket');
-      socketRef.current.close();
-    }
+    // Set up Firebase listeners
+    const roomMessagesRef = ref(database, `rooms/${roomId}/messages`);
+    const roomUsersRef = ref(database, `rooms/${roomId}/users`);
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}`);
-    console.log('WebSocket created:', socket.url);
-    socketRef.current = socket;
-
-    socket.onopen = () => {
-      console.log('WebSocket opened');
-      const latestJoin = pendingJoinRef.current;
-      if (latestJoin) {
-        console.log('Processing pending join');
-        attemptJoin(latestJoin.isOwner, latestJoin.initialRoomTag);
-      }
-      flushPendingPeerRequests().catch(console.error);
-    };
-
-    socket.onmessage = async (event) => {
-      const message = JSON.parse(event.data);
-      console.log('Received WebSocket message:', message.type, message);
-
-      switch (message.type) {
-        case 'room-info':
-          console.log('Received room-info:', message);
-          if (message.roomTag) setRoomTag(message.roomTag);
-          if (message.autoAccept !== undefined) setAutoAccept(message.autoAccept);
-          if (message.autoReject !== undefined) setAutoReject(message.autoReject);
-          setHasRoomInfo(true);
-          setIsWaitingInLobby(false);
-          if (pendingPeerCreatesRef.current.length > 0) {
-            const pending = pendingPeerCreatesRef.current.splice(0);
-            for (const user of pending) {
-              await createPeer(user.targetId, user.targetUsername, user.targetDisplayName, user.targetAvatar, user.isInitiator);
-            }
-          }
-          break;
+    // Listen for messages
+    const unsubscribeMessages = onValue(roomMessagesRef, (snapshot) => {
+      const messages = snapshot.val();
+      if (messages) {
+        const messageList = Object.values(messages);
+        // Process messages similar to WebSocket messages
+        messageList.forEach((msg: any) => {
+          switch (msg.type) {
+            case 'room-info':
+              console.log('Received room-info:', msg);
+              if (msg.roomTag) setRoomTag(msg.roomTag);
+              if (msg.autoAccept !== undefined) setAutoAccept(msg.autoAccept);
+              if (msg.autoReject !== undefined) setAutoReject(msg.autoReject);
+              setHasRoomInfo(true);
+              setIsWaitingInLobby(false);
+              break;
         case 'you-are-owner':
           console.log('Received you-are-owner');
           setIsOwner(true);

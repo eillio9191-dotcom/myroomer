@@ -6,3 +6,14 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+functions/.firebase/
+functions/node_modules/
+
+# IDE
+.vscode/
+.idea/
