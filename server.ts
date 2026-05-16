@@ -168,6 +168,7 @@ io.on('connection', (socket: Socket) => {
 
     if (!room) {
       room = createRoomState(userId);
+      room.ownerId = userId;
       room.users.set(userId, { ...user, userId, socketId: socket.id });
       rooms.set(roomId, room);
       acceptUserIntoRoom(socket, roomId, { ...user, userId, socketId: socket.id }, room);
