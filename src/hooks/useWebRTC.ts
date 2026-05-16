@@ -1,20 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, off, push, set, onDisconnect, onChildAdded, onChildRemoved, remove, update } from 'firebase/database';
+import { io, Socket } from 'socket.io-client';
 
-const firebaseConfig = {
-  apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY,
-  authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: (import.meta as any).env.VITE_FIREBASE_APP_ID,
-  measurementId: (import.meta as any).env.VITE_FIREBASE_MEASUREMENT_ID
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const database = getDatabase(app);
+const SOCKET_SERVER_URL = (import.meta as any).env.VITE_SOCKET_URL || 'http://localhost:3000';
 
 export interface Peer {
   userId: string;
@@ -109,52 +96,73 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     iceTransportPolicy: turnUrls.length > 0 ? 'relay' : 'all'
   };
 
-  const chatPath = (id: string) => ref(database, `rooms/${id}/chat`);
-  const statePath = (id: string) => ref(database, `rooms/${id}/state`);
-  const controlPath = (id: string, target: string) => ref(database, `rooms/${id}/control/${target}`);
-  const signalPath = (id: string, target: string) => ref(database, `rooms/${id}/signals/${target}`);
-  const metaPath = (id: string) => ref(database, `rooms/${id}/meta`);
-  const usersPath = (id: string) => ref(database, `rooms/${id}/users`);
+  const socketRef = useRef<Socket | null>(null);
+
+  const ensureSocket = () => {
+    if (socketRef.current) return socketRef.current;
+
+    const socket = io(SOCKET_SERVER_URL, {
+      transports: ['websocket'],
+      autoConnect: false
+    });
+
+    socketRef.current = socket;
+    return socket;
+  };
+
+  const canSendSocket = () => !!socketRef.current?.connected;
 
   const sendState = (message: any) => {
-    const roomStateRef = statePath(roomId);
-    push(roomStateRef, {
-      ...message,
-      timestamp: Date.now(),
-      senderId: userId
+    const socket = socketRef.current;
+    if (!socket || !roomId) return;
+    socket.emit('room-state', {
+      roomId,
+      message: {
+        ...message,
+        timestamp: Date.now(),
+        senderId: userId
+      }
     });
   };
 
   const sendControl = (targetId: string, message: any) => {
     if (!targetId) return;
-    const targetControlRef = controlPath(roomId, targetId);
-    push(targetControlRef, {
-      ...message,
-      timestamp: Date.now(),
-      senderId: userId
+    const socket = socketRef.current;
+    if (!socket || !roomId) return;
+    socket.emit('control', {
+      roomId,
+      targetId,
+      message: {
+        ...message,
+        timestamp: Date.now(),
+        senderId: userId
+      }
     });
   };
 
   const sendSignal = (targetId: string, signal: any) => {
     if (!targetId) return;
-    const targetSignalRef = signalPath(roomId, targetId);
-    push(targetSignalRef, {
-      signal,
-      timestamp: Date.now(),
-      senderId: userId
+    const socket = socketRef.current;
+    if (!socket || !roomId) return;
+    socket.emit('signal', {
+      roomId,
+      targetId,
+      signal
     });
   };
 
   const sendChat = (message: any) => {
-    const roomChatRef = chatPath(roomId);
-    push(roomChatRef, {
-      ...message,
-      timestamp: Date.now(),
-      senderId: userId
+    const socket = socketRef.current;
+    if (!socket || !roomId) return;
+    socket.emit('chat', {
+      roomId,
+      message: {
+        ...message,
+        timestamp: Date.now(),
+        senderId: userId
+      }
     });
   };
-
-  const canSendSocket = () => true; // Always true for Firebase
 
   const flushPendingPeerRequests = async () => {
     const queued = Array.from(pendingPeerRequestsRef.current.entries()) as Array<[string, { targetUsername: string; targetDisplayName: string; targetAvatar?: string; isInitiator: boolean }]>
@@ -228,7 +236,6 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const joinedAtRef = useRef<number | null>(null);
   const ownerIdRef = useRef<string | null>(null);
 
-  // Firebase presence join
   const attemptJoin = async (isOwner: boolean, initialRoomTag?: string) => {
     if (!roomId) {
       console.error('attemptJoin called with empty roomId');
@@ -243,26 +250,16 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       ownerIdRef.current = userId;
     }
 
-    // Save permanent room metadata if owner
-    if (isOwner) {
-      try {
-        const metaRef = metaPath(roomId);
-        // Use update() for Firebase Realtime Database (not set with merge)
-        await update(metaRef, {
-          ownerId: userId,
-          roomTag: initialRoomTag || roomTag,
-          createdAt: joinedAt
-        });
-      } catch (err) {
-        console.error('Failed to save room metadata:', err);
-      }
+    const socket = ensureSocket();
+    if (!socket) {
+      console.error('Socket not available for join');
+      return;
     }
 
-    const presenceRef = ref(database, `rooms/${roomId}/users/${userId}`);
     const camOn = localStreamRef.current ? localStreamRef.current.getVideoTracks().some(t => t.enabled) : false;
     const micOn = localStreamRef.current ? localStreamRef.current.getAudioTracks().some(t => t.enabled) : true;
 
-    await set(presenceRef, {
+    const userPayload = {
       userId,
       username,
       displayName: displayNameRef.current,
@@ -271,11 +268,12 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       camOn,
       micOn,
       joinedAt
+    };
+
+    socket.emit('join-room', {
+      roomId,
+      user: userPayload
     });
-    
-    // On disconnect (network loss or tab close), remove presence
-    // This triggers cleanup and room deletion if no users remain
-    onDisconnect(presenceRef).remove();
 
     if (initialRoomTag) {
       setRoomTag(initialRoomTag);
@@ -295,38 +293,16 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const leaveRoom = async () => {
     if (!roomId) return;
 
-    const userRef = ref(database, `rooms/${roomId}/users/${userId}`);
+    const socket = socketRef.current;
+    if (!socket) return;
 
     try {
-      // 1. Remove yourself first
-      await remove(userRef);
+      socket.emit('leave-room', { roomId, userId });
+      socket.disconnect();
     } catch (err) {
-      console.error('Failed to remove presence:', err);
-    }
-
-    // 2. Check if any users remain
-    const usersRef = usersPath(roomId);
-    
-    try {
-      const snapshot = await new Promise<any>((resolve) => {
-        onValue(usersRef, (snap) => resolve(snap), { onlyOnce: true });
-      });
-      
-      const hasUsers = snapshot.exists() && snapshot.numChildren() > 0;
-
-      if (!hasUsers) {
-        console.log('Room empty → cleaning temporary data only (chat, signals, state, control, users)');
-        // Delete only temporary data, preserve meta (owner, roomTag, etc)
-        await Promise.all([
-          remove(ref(database, `rooms/${roomId}/chat`)),
-          remove(ref(database, `rooms/${roomId}/signals`)),
-          remove(ref(database, `rooms/${roomId}/state`)),
-          remove(ref(database, `rooms/${roomId}/control`)),
-          remove(ref(database, `rooms/${roomId}/users`))
-        ]);
-      }
-    } catch (err) {
-      console.error('Failed to check users or delete temporary data:', err);
+      console.error('Failed during leave room:', err);
+    } finally {
+      socketRef.current = null;
     }
   };
 
@@ -336,37 +312,23 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   useEffect(() => {
     if (!roomId) {
-      console.log('useEffect: no roomId, skipping Firebase setup');
+      console.log('useEffect: no roomId, skipping Socket.IO setup');
       return;
     }
 
-    console.log('useEffect: setting up Firebase listeners for roomId:', roomId);
+    console.log('useEffect: setting up Socket.IO listeners for roomId:', roomId);
 
     pendingJoinRef.current = null;
     pendingPeerRequestsRef.current.clear();
 
-    const roomChatRef = chatPath(roomId);
-    const roomStateRef = statePath(roomId);
-    const roomControlRef = controlPath(roomId, userId);
-    const roomUsersRef = ref(database, `rooms/${roomId}/users`);
-    const roomSignalInboxRef = signalPath(roomId, userId);
+    const socket = ensureSocket();
     const startTime = Date.now() - 1000;
-
-    // Monitor users collection for empty rooms
-    // Note: actual cleanup happens in leaveRoom(), not here, to avoid race conditions
-    const unsubscribeUsersMonitor = onValue(roomUsersRef, (snapshot) => {
-      if (!snapshot.exists() || snapshot.numChildren() === 0) {
-        console.log('Observed: Room is now empty (users collection monitored)');
-        // Don't delete here - let leaveRoom() handle cleanup to prevent duplicate operations
-      }
-    });
 
     const isMessageFromOwner = (msg: any) => {
       return ownerIdRef.current ? msg.senderId === ownerIdRef.current : true;
     };
 
-    const processStateMessage = async (snapshot: any) => {
-      const msg = snapshot.val();
+    const processStateMessage = async (msg: any) => {
       if (!msg || msg.senderId === userId || msg.timestamp < startTime) return;
 
       switch (msg.type) {
@@ -505,8 +467,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       }
     };
 
-    const processChatMessage = (snapshot: any) => {
-      const msg = snapshot.val();
+    const processChatMessage = (msg: any) => {
       if (!msg || msg.senderId === userId || msg.timestamp < startTime) return;
       setMessages(prev => [...prev, {
         id: msg.id || `${msg.senderId}-${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`,
@@ -520,8 +481,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       }]);
     };
 
-    const processControlMessage = (snapshot: any) => {
-      const msg = snapshot.val();
+    const processControlMessage = (msg: any) => {
       if (!msg || msg.senderId === userId || msg.timestamp < startTime) return;
 
       switch (msg.type) {
@@ -568,62 +528,103 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       }
     };
 
-    const processSignalMessage = async (snapshot: any) => {
-      const msg = snapshot.val();
+    const processSignalMessage = async (msg: any) => {
       if (!msg || msg.senderId === userId || msg.timestamp < startTime) return;
       await handleSignal(msg.senderId, msg.signal);
     };
 
-    const handleNewUser = async (snapshot: any) => {
-      const userEntry = snapshot.val();
-      const userKey = snapshot.key;
-      if (!userEntry || !userKey || userKey === userId) return;
-      if (peersRef.current.has(userKey)) return;
+    const handleUserJoined = async ({ user }: any) => {
+      if (!user || user.userId === userId) return;
+      if (peersRef.current.has(user.userId)) return;
 
       const isInitiator = (() => {
-        if (isOwner && !userEntry.isOwner) return true;
-        if (!isOwner && userEntry.isOwner) return false;
-        if (joinedAtRef.current && userEntry.joinedAt) {
-          if (joinedAtRef.current !== userEntry.joinedAt) {
-            return joinedAtRef.current < userEntry.joinedAt;
+        if (isOwner && !user.isOwner) return true;
+        if (!isOwner && user.isOwner) return false;
+        if (joinedAtRef.current && user.joinedAt) {
+          if (joinedAtRef.current !== user.joinedAt) {
+            return joinedAtRef.current < user.joinedAt;
           }
         }
-        return userId < userKey;
+        return userId < user.userId;
       })();
 
       await createPeer(
-        userEntry.userId,
-        userEntry.username,
-        userEntry.displayName,
-        userEntry.avatar,
+        user.userId,
+        user.username,
+        user.displayName,
+        user.avatar,
         isInitiator,
-        userEntry.camOn,
-        userEntry.micOn
+        user.camOn,
+        user.micOn
       );
     };
 
-    const unsubscribeUserAdded = onChildAdded(roomUsersRef, handleNewUser);
-    const unsubscribeUserRemoved = onChildRemoved(roomUsersRef, (snapshot) => {
-      const userKey = snapshot.key;
-      if (userKey && userKey !== userId) {
-        removePeer(userKey);
+    const handleExistingUsers = async ({ users }: any) => {
+      if (!Array.isArray(users)) return;
+      for (const user of users) {
+        if (!user || user.userId === userId) continue;
+        if (peersRef.current.has(user.userId)) continue;
+
+        const isInitiator = (() => {
+          if (isOwner && !user.isOwner) return true;
+          if (!isOwner && user.isOwner) return false;
+          if (joinedAtRef.current && user.joinedAt) {
+            if (joinedAtRef.current !== user.joinedAt) {
+              return joinedAtRef.current < user.joinedAt;
+            }
+          }
+          return userId < user.userId;
+        })();
+
+        await createPeer(
+          user.userId,
+          user.username,
+          user.displayName,
+          user.avatar,
+          isInitiator,
+          user.camOn,
+          user.micOn
+        );
       }
-    });
-    const unsubscribeStateAdded = onChildAdded(roomStateRef, processStateMessage);
-    const unsubscribeChatAdded = onChildAdded(roomChatRef, processChatMessage);
-    const unsubscribeControlAdded = onChildAdded(roomControlRef, processControlMessage);
-    const unsubscribeSignalAdded = onChildAdded(roomSignalInboxRef, processSignalMessage);
+    };
+
+    const handleUserLeft = ({ userId: leftUserId }: any) => {
+      if (leftUserId && leftUserId !== userId) {
+        removePeer(leftUserId);
+      }
+    };
+
+    const handleSocketDisconnect = (reason: any) => {
+      console.log('Socket disconnected:', reason);
+    };
+
+    const handleSocketConnect = () => {
+      console.log('Socket connected:', socket.id);
+    };
+
+    socket.on('connect', handleSocketConnect);
+    socket.on('disconnect', handleSocketDisconnect);
+    socket.on('user-joined', handleUserJoined);
+    socket.on('user-left', handleUserLeft);
+    socket.on('existing-users', handleExistingUsers);
+    socket.on('signal', processSignalMessage);
+    socket.on('chat', processChatMessage);
+    socket.on('room-state', ({ message }: any) => processStateMessage(message));
+    socket.on('control', ({ message }: any) => processControlMessage(message));
+
+    socket.connect();
 
     return () => {
-      unsubscribeUserAdded();
-      unsubscribeUserRemoved();
-      unsubscribeStateAdded();
-      unsubscribeChatAdded();
-      unsubscribeControlAdded();
-      unsubscribeSignalAdded();
-      unsubscribeUsersMonitor();
-      
-      // Leave room and cleanup
+      socket.off('connect', handleSocketConnect);
+      socket.off('disconnect', handleSocketDisconnect);
+      socket.off('user-joined', handleUserJoined);
+      socket.off('user-left', handleUserLeft);
+      socket.off('existing-users', handleExistingUsers);
+      socket.off('signal', processSignalMessage);
+      socket.off('chat', processChatMessage);
+      socket.off('room-state');
+      socket.off('control');
+
       leaveRoom().catch(console.error);
     };
   }, [roomId, userId, username, displayName, avatar, isOwner]);
