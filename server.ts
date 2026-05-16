@@ -15,6 +15,7 @@ const io = new Server(server, {
 interface RoomSettings {
   autoAccept: boolean;
   autoReject: boolean;
+  locked: boolean;
   roomTag?: string;
 }
 
@@ -87,6 +88,7 @@ const createRoomState = (ownerId: string, roomTag?: string): RoomState => ({
   settings: {
     autoAccept: false,
     autoReject: false,
+    locked: false,
     roomTag: roomTag ?? undefined
   }
 });
@@ -102,17 +104,23 @@ const acceptUserIntoRoom = (socket: Socket, roomId: string, user: RoomUser, room
     .filter((existing) => existing.userId !== userId)
     .map(buildUserPayload);
 
+  const isOwner = room.ownerId === userId;
+
+  socket.emit('room-state', {
+    message: {
+      type: 'room-info',
+      roomId,
+      ownerId: room.ownerId,
+      isOwner,
+      roomTag: room.settings.roomTag,
+      autoAccept: room.settings.autoAccept,
+      autoReject: room.settings.autoReject,
+      locked: room.settings.locked
+    }
+  });
+
   socket.emit('existing-users', { users: existingUsers });
   socket.to(roomId).emit('user-joined', { user: buildUserPayload(user) });
-
-  if (room.ownerId === userId) {
-    socket.emit('room-state', {
-      message: {
-        type: 'you-are-owner',
-        ownerId: room.ownerId
-      }
-    });
-  }
 
   if (room.mutedUsers.has(userId)) {
     socket.emit('control', { message: { type: 'force-mute' } });
@@ -132,6 +140,7 @@ const removeUserFromRoom = (roomId: string, userId: string) => {
 const updateRoomSettings = (room: RoomState, message: RoomStateMessage) => {
   if (message.autoAccept !== undefined) room.settings.autoAccept = !!message.autoAccept;
   if (message.autoReject !== undefined) room.settings.autoReject = !!message.autoReject;
+  if (message.locked !== undefined) room.settings.locked = !!message.locked;
   if (message.roomTag !== undefined) room.settings.roomTag = message.roomTag;
 };
 
@@ -158,7 +167,7 @@ io.on('connection', (socket: Socket) => {
     const isRoomOwner = room ? room.ownerId === userId : false;
 
     if (!room) {
-      room = createRoomState(userId, roomId);
+      room = createRoomState(userId);
       room.users.set(userId, { ...user, userId, socketId: socket.id });
       rooms.set(roomId, room);
       acceptUserIntoRoom(socket, roomId, { ...user, userId, socketId: socket.id }, room);
@@ -168,17 +177,18 @@ io.on('connection', (socket: Socket) => {
     if (room.users.has(userId)) {
       room.users.set(userId, { ...user, userId, socketId: socket.id });
       socket.join(roomId);
-      if (room.ownerId !== userId) {
-        socket.emit('room-state', {
-          message: {
-            type: 'room-info',
-            ownerId: room.ownerId,
-            roomTag: room.settings.roomTag,
-            autoAccept: room.settings.autoAccept,
-            autoReject: room.settings.autoReject
-          }
-        });
-      }
+      socket.emit('room-state', {
+        message: {
+          type: 'room-info',
+          roomId,
+          ownerId: room.ownerId,
+          isOwner: room.ownerId === userId,
+          roomTag: room.settings.roomTag,
+          autoAccept: room.settings.autoAccept,
+          autoReject: room.settings.autoReject,
+          locked: room.settings.locked
+        }
+      });
       acceptUserIntoRoom(socket, roomId, { ...user, userId, socketId: socket.id }, room);
       return;
     }
@@ -187,6 +197,14 @@ io.on('connection', (socket: Socket) => {
       return socket.emit('room-state', {
         message: {
           type: 'lobby-rejected'
+        }
+      });
+    }
+
+    if (room.settings.locked && !isRoomOwner) {
+      return socket.emit('room-state', {
+        message: {
+          type: 'room-locked'
         }
       });
     }
@@ -269,7 +287,8 @@ io.on('connection', (socket: Socket) => {
           ownerId: room.ownerId,
           roomTag: room.settings.roomTag,
           autoAccept: room.settings.autoAccept,
-          autoReject: room.settings.autoReject
+          autoReject: room.settings.autoReject,
+          locked: room.settings.locked
         }
       });
       return;
@@ -346,7 +365,7 @@ io.on('connection', (socket: Socket) => {
         if (!isOwner || !targetUserId || !room.users.has(targetUserId)) return;
         room.ownerId = targetUserId;
         sendToUser(targetUserId, 'room-state', { message: { type: 'you-are-owner', ownerId: targetUserId } });
-        broadcastRoom(roomId, 'room-state', { message: { type: 'room-info', ownerId: targetUserId, roomTag: room.settings.roomTag, autoAccept: room.settings.autoAccept, autoReject: room.settings.autoReject } });
+        broadcastRoom(roomId, 'room-state', { message: { type: 'room-info', ownerId: targetUserId, roomTag: room.settings.roomTag, autoAccept: room.settings.autoAccept, autoReject: room.settings.autoReject, locked: room.settings.locked } });
         break;
       case 'update-settings':
         if (!isOwner) return;
@@ -357,7 +376,8 @@ io.on('connection', (socket: Socket) => {
             ownerId: room.ownerId,
             roomTag: room.settings.roomTag,
             autoAccept: room.settings.autoAccept,
-            autoReject: room.settings.autoReject
+            autoReject: room.settings.autoReject,
+            locked: room.settings.locked
           }
         });
         break;
@@ -378,8 +398,6 @@ io.on('connection', (socket: Socket) => {
 
     removeUserFromRoom(roomId, userId);
     socket.leave(roomId);
-    userSocketMap.delete(userId);
-    socket.data.userId = undefined;
   });
 
   socket.on('disconnect', () => {
