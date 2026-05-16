@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, off, push, set, onDisconnect, onChildAdded, onChildRemoved } from 'firebase/database';
+import { getDatabase, ref, onValue, off, push, set, onDisconnect, onChildAdded, onChildRemoved, remove, update } from 'firebase/database';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+  apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY,
+  authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: (import.meta as any).env.VITE_FIREBASE_APP_ID,
+  measurementId: (import.meta as any).env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
@@ -26,6 +26,9 @@ export interface Peer {
   isMuted?: boolean;
   camOn?: boolean;
   micOn?: boolean;
+  polite?: boolean;
+  ignoreOffer?: boolean;
+  makingOffer?: boolean;
 }
 
 export interface ChatMessage {
@@ -80,7 +83,13 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const pendingJoinRef = useRef<{ isOwner: boolean; initialRoomTag?: string } | null>(null);
   const pendingPeerRequestsRef = useRef<Map<string, { targetUsername: string; targetDisplayName: string; targetAvatar?: string; isInitiator: boolean }>>(new Map());
 
-  const turnUrls = (import.meta as any).env.VITE_TURN_URL?.split(',') || [];
+  const turnUrls = ((import.meta as any).env.VITE_TURN_URL || '').split(',').map((url: string) => url.trim()).filter(Boolean);
+  const turnUsername = (import.meta as any).env.VITE_TURN_USERNAME;
+  const turnPassword = (import.meta as any).env.VITE_TURN_PASSWORD;
+
+  if (!turnUrls.length) {
+    console.warn('TURN is not configured. For mandatory ICE/relay support, add VITE_TURN_URL, VITE_TURN_USERNAME, and VITE_TURN_PASSWORD in Render.');
+  }
 
   const iceServers: RTCConfiguration = {
     iceServers: [
@@ -93,23 +102,59 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       { urls: 'stun:bn-turn2.xirsys.com' },
       ...(turnUrls.length > 0 ? [{
         urls: turnUrls,
-        username: (import.meta as any).env.VITE_TURN_USERNAME,
-        credential: (import.meta as any).env.VITE_TURN_PASSWORD
+        username: turnUsername,
+        credential: turnPassword
       }] : [])
     ],
+    iceTransportPolicy: turnUrls.length > 0 ? 'relay' : 'all'
   };
 
-  // Firebase-based messaging instead of WebSocket
-  const canSendSocket = () => true; // Always true for Firebase
+  const chatPath = (id: string) => ref(database, `rooms/${id}/chat`);
+  const statePath = (id: string) => ref(database, `rooms/${id}/state`);
+  const controlPath = (id: string, target: string) => ref(database, `rooms/${id}/control/${target}`);
+  const signalPath = (id: string, target: string) => ref(database, `rooms/${id}/signals/${target}`);
+  const metaPath = (id: string) => ref(database, `rooms/${id}/meta`);
+  const usersPath = (id: string) => ref(database, `rooms/${id}/users`);
 
-  const sendToFirebase = (message: any) => {
-    const roomRef = ref(database, `rooms/${roomId}/messages`);
-    push(roomRef, {
+  const sendState = (message: any) => {
+    const roomStateRef = statePath(roomId);
+    push(roomStateRef, {
       ...message,
       timestamp: Date.now(),
       senderId: userId
     });
   };
+
+  const sendControl = (targetId: string, message: any) => {
+    if (!targetId) return;
+    const targetControlRef = controlPath(roomId, targetId);
+    push(targetControlRef, {
+      ...message,
+      timestamp: Date.now(),
+      senderId: userId
+    });
+  };
+
+  const sendSignal = (targetId: string, signal: any) => {
+    if (!targetId) return;
+    const targetSignalRef = signalPath(roomId, targetId);
+    push(targetSignalRef, {
+      signal,
+      timestamp: Date.now(),
+      senderId: userId
+    });
+  };
+
+  const sendChat = (message: any) => {
+    const roomChatRef = chatPath(roomId);
+    push(roomChatRef, {
+      ...message,
+      timestamp: Date.now(),
+      senderId: userId
+    });
+  };
+
+  const canSendSocket = () => true; // Always true for Firebase
 
   const flushPendingPeerRequests = async () => {
     const queued = Array.from(pendingPeerRequestsRef.current.entries()) as Array<[string, { targetUsername: string; targetDisplayName: string; targetAvatar?: string; isInitiator: boolean }]>
@@ -134,9 +179,11 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       );
       
       tracksToAdd.forEach(track => {
-        peer.connection.addTrack(track, localStream).catch(err => {
+        try {
+          peer.connection.addTrack(track, localStream);
+        } catch (err) {
           console.error(`Error adding track to peer ${peer.userId}:`, err);
-        });
+        }
       });
     });
 
@@ -178,6 +225,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const [broadcastQuality, setBroadcastQuality] = useState(false);
   const [roomTag, setRoomTag] = useState('');
   const [incomingCall, setIncomingCall] = useState<{ callerId: string; callerDisplayName: string; callerAvatar?: string; roomId: string } | null>(null);
+  const joinedAtRef = useRef<number | null>(null);
+  const ownerIdRef = useRef<string | null>(null);
 
   // Firebase presence join
   const attemptJoin = async (isOwner: boolean, initialRoomTag?: string) => {
@@ -187,6 +236,27 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     }
     pendingJoinRef.current = null;
     setIsOwner(isOwner);
+
+    const joinedAt = Date.now();
+    joinedAtRef.current = joinedAt;
+    if (isOwner) {
+      ownerIdRef.current = userId;
+    }
+
+    // Save permanent room metadata if owner
+    if (isOwner) {
+      try {
+        const metaRef = metaPath(roomId);
+        // Use update() for Firebase Realtime Database (not set with merge)
+        await update(metaRef, {
+          ownerId: userId,
+          roomTag: initialRoomTag || roomTag,
+          createdAt: joinedAt
+        });
+      } catch (err) {
+        console.error('Failed to save room metadata:', err);
+      }
+    }
 
     const presenceRef = ref(database, `rooms/${roomId}/users/${userId}`);
     const camOn = localStreamRef.current ? localStreamRef.current.getVideoTracks().some(t => t.enabled) : false;
@@ -198,25 +268,66 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       displayName: displayNameRef.current,
       avatar: avatarRef.current,
       isOwner,
-      roomTag: initialRoomTag || roomTag,
       camOn,
       micOn,
-      joinedAt: Date.now()
+      joinedAt
     });
+    
+    // On disconnect (network loss or tab close), remove presence
+    // This triggers cleanup and room deletion if no users remain
     onDisconnect(presenceRef).remove();
 
     if (initialRoomTag) {
       setRoomTag(initialRoomTag);
     }
 
-    sendToFirebase({
+    sendState({
       type: 'room-info',
       roomId,
       roomTag: initialRoomTag || roomTag,
       autoAccept,
       autoReject,
-      isOwner
+      isOwner,
+      ownerId: isOwner ? userId : ownerIdRef.current
     });
+  };
+
+  const leaveRoom = async () => {
+    if (!roomId) return;
+
+    const userRef = ref(database, `rooms/${roomId}/users/${userId}`);
+
+    try {
+      // 1. Remove yourself first
+      await remove(userRef);
+    } catch (err) {
+      console.error('Failed to remove presence:', err);
+    }
+
+    // 2. Check if any users remain
+    const usersRef = usersPath(roomId);
+    
+    try {
+      const snapshot = await new Promise<any>((resolve) => {
+        onValue(usersRef, (snap) => resolve(snap), { onlyOnce: true });
+      });
+      
+      const hasUsers = snapshot.exists() && snapshot.numChildren() > 0;
+
+      if (!hasUsers) {
+        console.log('Room empty → cleaning temporary data only (chat, signals, state, control, users)');
+        // Delete only temporary data, preserve meta (owner, roomTag, etc)
+        await Promise.all([
+          remove(ref(database, `rooms/${roomId}/chat`)),
+          remove(ref(database, `rooms/${roomId}/signals`)),
+          remove(ref(database, `rooms/${roomId}/state`)),
+          remove(ref(database, `rooms/${roomId}/control`)),
+          remove(ref(database, `rooms/${roomId}/users`))
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to check users or delete temporary data:', err);
+    }
   };
 
   const queuePeerRequest = (targetId: string, targetUsername: string, targetDisplayName: string, targetAvatar: string | undefined, isInitiator: boolean) => {
@@ -234,11 +345,27 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     pendingJoinRef.current = null;
     pendingPeerRequestsRef.current.clear();
 
-    const roomMessagesRef = ref(database, `rooms/${roomId}/messages`);
+    const roomChatRef = chatPath(roomId);
+    const roomStateRef = statePath(roomId);
+    const roomControlRef = controlPath(roomId, userId);
     const roomUsersRef = ref(database, `rooms/${roomId}/users`);
+    const roomSignalInboxRef = signalPath(roomId, userId);
     const startTime = Date.now() - 1000;
 
-    const processMessage = async (snapshot: any) => {
+    // Monitor users collection for empty rooms
+    // Note: actual cleanup happens in leaveRoom(), not here, to avoid race conditions
+    const unsubscribeUsersMonitor = onValue(roomUsersRef, (snapshot) => {
+      if (!snapshot.exists() || snapshot.numChildren() === 0) {
+        console.log('Observed: Room is now empty (users collection monitored)');
+        // Don't delete here - let leaveRoom() handle cleanup to prevent duplicate operations
+      }
+    });
+
+    const isMessageFromOwner = (msg: any) => {
+      return ownerIdRef.current ? msg.senderId === ownerIdRef.current : true;
+    };
+
+    const processStateMessage = async (snapshot: any) => {
       const msg = snapshot.val();
       if (!msg || msg.senderId === userId || msg.timestamp < startTime) return;
 
@@ -250,11 +377,15 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
           if (msg.autoReject !== undefined) setAutoReject(msg.autoReject);
           setHasRoomInfo(true);
           setIsWaitingInLobby(false);
+          if (msg.ownerId) {
+            ownerIdRef.current = msg.ownerId;
+          }
           break;
         case 'you-are-owner':
           console.log('Received you-are-owner');
           setIsOwner(true);
           if (msg.ownerKey) setOwnerKey(msg.ownerKey);
+          ownerIdRef.current = msg.senderId;
           break;
         case 'waiting-in-lobby':
           console.log('Received waiting-in-lobby');
@@ -280,10 +411,12 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
           alert('Your request to join was rejected.');
           break;
         case 'kicked':
+          if (!isMessageFromOwner(msg)) return;
           console.log('Received kicked');
           setIsKicked(true);
           break;
         case 'room-deleted':
+          if (!isMessageFromOwner(msg)) return;
           alert('The room has been deleted by the owner.');
           window.location.href = '/';
           break;
@@ -295,75 +428,18 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
             roomId: msg.roomId
           });
           break;
-        case 'user-joined':
-          console.log('Received user-joined:', msg);
-          setIsWaitingInLobby(false);
-          setLobbyRequests(prev => prev.filter(r => r.userId !== msg.userId));
-          if (!hasRoomInfoRef.current) {
-            pendingPeerCreatesRef.current.push({
-              targetId: msg.userId,
-              targetUsername: msg.username,
-              targetDisplayName: msg.displayName,
-              targetAvatar: msg.avatar,
-              isInitiator: true,
-              camOn: msg.camOn,
-              micOn: msg.micOn
-            });
-          } else {
-            await createPeer(msg.userId, msg.username, msg.displayName, msg.avatar, true, msg.camOn, msg.micOn);
-          }
-          break;
-        case 'room-users':
-          console.log('Received room-users:', msg);
-          setIsWaitingInLobby(false);
-          const userIds = msg.users.map((u: any) => u.userId);
-          setLobbyRequests(prev => prev.filter(r => !userIds.includes(r.userId)));
-          for (const user of msg.users) {
-            if (!hasRoomInfoRef.current) {
-              pendingPeerCreatesRef.current.push({
-                targetId: user.userId,
-                targetUsername: user.username,
-                targetDisplayName: user.displayName,
-                targetAvatar: user.avatar,
-                isInitiator: false,
-                camOn: user.camOn,
-                micOn: user.micOn
-              });
-            } else {
-              await createPeer(user.userId, user.username, user.displayName, user.avatar, false, user.camOn, user.micOn);
-            }
-          }
-          break;
-        case 'signal':
-          if (msg.targetId !== userId) return;
-          await handleSignal(msg.senderId, msg.signal);
-          break;
-        case 'user-left':
-
-          removePeer(msg.userId);
-          break;
-        case 'chat':
-          setMessages(prev => [...prev, {
-            id: msg.id || `${msg.senderId}-${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`,
-            text: msg.text,
-            senderId: msg.senderId,
-            username: msg.username,
-            displayName: msg.displayName,
-            avatar: msg.avatar,
-            timestamp: msg.timestamp,
-            file: msg.file
-          }]);
-          break;
         case 'quality-request':
-          const peerToUpdate = peersRef.current.get(msg.senderId);
-          if (peerToUpdate) {
-            const preset = QUALITY_PRESETS[msg.level as QualityLevel];
-            const sender = peerToUpdate.connection.getSenders().find(s => s.track?.kind === 'video');
-            if (sender) {
-              const params = sender.getParameters();
-              if (!params.encodings) params.encodings = [{}];
-              params.encodings[0].maxBitrate = preset.bitrate;
-              sender.setParameters(params).catch(console.error);
+          {
+            const peerToUpdate = peersRef.current.get(msg.senderId);
+            if (peerToUpdate) {
+              const preset = QUALITY_PRESETS[msg.level as QualityLevel];
+              const sender = peerToUpdate.connection.getSenders().find(s => s.track?.kind === 'video');
+              if (sender) {
+                const params = sender.getParameters();
+                if (!params.encodings) params.encodings = [{}];
+                params.encodings[0].maxBitrate = preset.bitrate;
+                sender.setParameters(params).catch(console.error);
+              }
             }
           }
           break;
@@ -395,6 +471,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
           });
           break;
         case 'force-mute':
+          if (!isMessageFromOwner(msg)) return;
           if (localStreamRef.current) {
             localStreamRef.current.getAudioTracks().forEach(track => {
               track.enabled = false;
@@ -405,6 +482,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
           options?.onMuteForced?.();
           break;
         case 'force-unmute':
+          if (!isMessageFromOwner(msg)) return;
           setIsForceMuted(false);
           options?.onUnmuteForced?.();
           break;
@@ -427,13 +505,92 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       }
     };
 
+    const processChatMessage = (snapshot: any) => {
+      const msg = snapshot.val();
+      if (!msg || msg.senderId === userId || msg.timestamp < startTime) return;
+      setMessages(prev => [...prev, {
+        id: msg.id || `${msg.senderId}-${msg.timestamp}-${Math.random().toString(36).substr(2, 9)}`,
+        text: msg.text,
+        senderId: msg.senderId,
+        username: msg.username,
+        displayName: msg.displayName,
+        avatar: msg.avatar,
+        timestamp: msg.timestamp,
+        file: msg.file
+      }]);
+    };
+
+    const processControlMessage = (snapshot: any) => {
+      const msg = snapshot.val();
+      if (!msg || msg.senderId === userId || msg.timestamp < startTime) return;
+
+      switch (msg.type) {
+        case 'lobby-approve':
+          setIsWaitingInLobby(false);
+          setHasRoomInfo(true);
+          break;
+        case 'lobby-reject':
+          setIsWaitingInLobby(false);
+          alert('Your request to join was rejected.');
+          break;
+        case 'kicked':
+          setIsKicked(true);
+          break;
+        case 'force-mute':
+          if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(track => {
+              track.enabled = false;
+            });
+          }
+          setIsForceMuted(true);
+          sendMuteStatus(true);
+          options?.onMuteForced?.();
+          break;
+        case 'permit-speak':
+          setIsForceMuted(false);
+          if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach(track => {
+              track.enabled = true;
+            });
+          }
+          options?.onUnmuteForced?.();
+          break;
+        case 'incoming-call':
+          setIncomingCall({
+            callerId: msg.callerId,
+            callerDisplayName: msg.callerDisplayName,
+            callerAvatar: msg.callerAvatar,
+            roomId: msg.roomId
+          });
+          break;
+        default:
+          break;
+      }
+    };
+
+    const processSignalMessage = async (snapshot: any) => {
+      const msg = snapshot.val();
+      if (!msg || msg.senderId === userId || msg.timestamp < startTime) return;
+      await handleSignal(msg.senderId, msg.signal);
+    };
+
     const handleNewUser = async (snapshot: any) => {
       const userEntry = snapshot.val();
       const userKey = snapshot.key;
       if (!userEntry || !userKey || userKey === userId) return;
       if (peersRef.current.has(userKey)) return;
 
-      const isInitiator = userId < userKey;
+      const isInitiator = (() => {
+        if (isOwner && !userEntry.isOwner) return true;
+        if (!isOwner && userEntry.isOwner) return false;
+        if (joinedAtRef.current && userEntry.joinedAt) {
+          if (joinedAtRef.current !== userEntry.joinedAt) {
+            return joinedAtRef.current < userEntry.joinedAt;
+          }
+        }
+        return userId < userKey;
+      })();
+
       await createPeer(
         userEntry.userId,
         userEntry.username,
@@ -452,11 +609,22 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
         removePeer(userKey);
       }
     });
-    const unsubscribeMessageAdded = onChildAdded(roomMessagesRef, processMessage);
+    const unsubscribeStateAdded = onChildAdded(roomStateRef, processStateMessage);
+    const unsubscribeChatAdded = onChildAdded(roomChatRef, processChatMessage);
+    const unsubscribeControlAdded = onChildAdded(roomControlRef, processControlMessage);
+    const unsubscribeSignalAdded = onChildAdded(roomSignalInboxRef, processSignalMessage);
 
     return () => {
-      off(roomUsersRef);
-      off(roomMessagesRef);
+      unsubscribeUserAdded();
+      unsubscribeUserRemoved();
+      unsubscribeStateAdded();
+      unsubscribeChatAdded();
+      unsubscribeControlAdded();
+      unsubscribeSignalAdded();
+      unsubscribeUsersMonitor();
+      
+      // Leave room and cleanup
+      leaveRoom().catch(console.error);
     };
   }, [roomId, userId, username, displayName, avatar, isOwner]);
 
@@ -472,9 +640,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const updateRoomTag = (newTag: string) => {
     if (roomId) {
-      sendToFirebase({
+      sendState({
         type: 'update-room-tag',
-        roomId,
         roomTag: newTag
       });
     }
@@ -482,7 +649,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const approveUser = (targetId: string) => {
     if (roomId) {
-      sendToFirebase({ type: 'lobby-approve', roomId, targetId });
+      sendControl(targetId, { type: 'lobby-approve' });
       setLobbyRequests(prev => prev.filter(r => r.userId !== targetId));
     }
   };
@@ -490,7 +657,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const approveAll = () => {
     if (roomId) {
       lobbyRequests.forEach(req => {
-        sendToFirebase({ type: 'lobby-approve', roomId, targetId: req.userId });
+        sendControl(req.userId, { type: 'lobby-approve' });
       });
       setLobbyRequests([]);
     }
@@ -498,7 +665,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const rejectUser = (targetId: string) => {
     if (roomId) {
-      sendToFirebase({ type: 'lobby-reject', roomId, targetId });
+      sendControl(targetId, { type: 'lobby-reject' });
       setLobbyRequests(prev => prev.filter(r => r.userId !== targetId));
     }
   };
@@ -506,33 +673,41 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const rejectAll = () => {
     if (roomId) {
       lobbyRequests.forEach(req => {
-        sendToFirebase({ type: 'lobby-reject', roomId, targetId: req.userId });
+        sendControl(req.userId, { type: 'lobby-reject' });
       });
       setLobbyRequests([]);
     }
   };
 
   const kickUser = (targetId: string) => {
+    if (!isOwner) return;
     if (roomId) {
-      sendToFirebase({ type: 'kick-user', roomId, targetId });
+      sendControl(targetId, { type: 'kicked' });
     }
   };
 
   const deleteRoom = () => {
+    if (!isOwner) return;
     if (roomId) {
-      sendToFirebase({ type: 'delete-room', roomId });
+      sendState({ type: 'delete-room' });
     }
   };
 
   const forceMute = (targetId?: string, muteAll?: boolean) => {
     console.log('forceMute initiated:', { targetId, muteAll, roomId });
+    if (!isOwner) return;
     if (roomId) {
-      sendToFirebase({
-        type: 'force-mute',
-        roomId,
-        targetId,
-        muteAll
-      });
+      if (targetId) {
+        sendControl(targetId, {
+          type: 'force-mute',
+          muteAll: false
+        });
+      } else {
+        sendState({
+          type: 'force-mute',
+          muteAll: true
+        });
+      }
 
       // Optimistic local update for owner UI feedback
       setPeers(prev => {
@@ -554,10 +729,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const permitSpeak = (targetId: string) => {
     if (roomId) {
-      sendToFirebase({
-        type: 'permit-speak',
-        roomId,
-        targetId
+      sendControl(targetId, {
+        type: 'permit-speak'
       });
 
       // Optimistic local update
@@ -574,9 +747,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const directCall = (targetId: string, providedRoomId?: string) => {
     if (roomId) {
-      sendToFirebase({
-        type: 'direct-call',
-        targetId,
+      sendControl(targetId, {
+        type: 'incoming-call',
         callerId: userId,
         callerDisplayName: displayName,
         callerAvatar: avatar,
@@ -587,9 +759,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const updateRoomSettings = (autoAccept: boolean, autoReject: boolean) => {
     if (roomId) {
-      sendToFirebase({
+      sendState({
         type: 'room-settings',
-        roomId,
         autoAccept,
         autoReject
       });
@@ -598,9 +769,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const updateProfile = (newDisplayName: string, newAvatar?: string) => {
     if (roomId) {
-      sendToFirebase({
+      sendState({
         type: 'profile-update',
-        senderId: userId,
         displayName: newDisplayName,
         avatar: newAvatar
       });
@@ -614,10 +784,9 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     // Notify all peers about our desired reception quality
     peersRef.current.forEach(peer => {
       if (roomId) {
-        sendToFirebase({
+        sendState({
           type: 'quality-request',
           targetId: peer.userId,
-          senderId: userId,
           level
         });
       }
@@ -667,9 +836,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
   const sendMuteStatus = (isMuted: boolean) => {
     if (roomId) {
-      sendToFirebase({
+      sendState({
         type: 'mute-status',
-        senderId: userId,
         isMuted
       });
     }
@@ -677,9 +845,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   
   const sendCamStatus = (camOn: boolean) => {
     if (roomId) {
-      sendToFirebase({
+      sendState({
         type: 'cam-status',
-        senderId: userId,
         camOn
       });
     }
@@ -701,7 +868,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     };
     setMessages(prev => [...prev, chatMessage]);
     if (roomId) {
-      sendToFirebase(chatMessage);
+      sendChat(chatMessage);
     }
   };
 
@@ -758,6 +925,9 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     const pc = new RTCPeerConnection(iceServers);
     let makingOffer = false;
+    let ignoreOffer = false;
+    let iceRestartAttempts = 0;
+    const MAX_ICE_RESTARTS = 2;
 
     const peer: Peer = {
       userId: targetId,
@@ -767,18 +937,15 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       connection: pc,
       isMuted: initialMicOn === false,
       camOn: initialCamOn ?? true,
-      micOn: initialMicOn ?? true
+      micOn: initialMicOn ?? true,
+      polite: !isInitiator, // Polite peer accepts offer collision; initiator is impolite
+      ignoreOffer: false,
+      makingOffer: false
     };
 
     pc.onicecandidate = (event) => {
       if (event.candidate && roomId) {
-        sendToFirebase({
-          type: 'signal',
-          targetId,
-          senderId: userId,
-          roomId,
-          signal: { candidate: event.candidate }
-        });
+        sendSignal(targetId, { candidate: event.candidate });
       }
     };
 
@@ -796,13 +963,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
         }
         await pc.setLocalDescription(offer);
         if (roomId) {
-          sendToFirebase({
-            type: 'signal',
-            targetId,
-            senderId: userId,
-            roomId,
-            signal: { sdp: pc.localDescription }
-          });
+          sendSignal(targetId, { sdp: pc.localDescription });
         }
       } catch (err) {
         console.error("Negotiation error:", err);
@@ -817,7 +978,6 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
         const newPeers = new Map<string, Peer>(prev);
         const existing = newPeers.get(targetId);
         if (existing) {
-          // Create new peer object instead of mutating
           newPeers.set(targetId, {
             ...existing,
             stream: event.streams[0]
@@ -830,18 +990,24 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     pc.oniceconnectionstatechange = () => {
       console.log(`ICE connection state with ${targetId}: ${pc.iceConnectionState}`);
       if (pc.iceConnectionState === 'failed') {
-        console.log(`ICE failed with ${targetId}, attempting restart...`);
-        pc.restartIce();
+        if (iceRestartAttempts < MAX_ICE_RESTARTS) {
+          console.log(`ICE failed with ${targetId}, attempting restart (${iceRestartAttempts + 1}/${MAX_ICE_RESTARTS})...`);
+          iceRestartAttempts++;
+          pc.restartIce();
+        } else {
+          console.error(`ICE failed too many times with ${targetId}, giving up`);
+          removePeer(targetId);
+        }
       }
     };
 
     // Add local tracks if available
-    const senders = pc.getSenders();
     if (stream) {
       stream.getTracks().forEach(track => {
-        const alreadyAdded = senders.some(s => s.track?.id === track.id);
-        if (!alreadyAdded) {
+        try {
           pc.addTrack(track, stream);
+        } catch (err) {
+          console.error(`Error adding track to peer ${targetId}:`, err);
         }
       });
     }
@@ -853,13 +1019,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         if (roomId) {
-          sendToFirebase({
-            type: 'signal',
-            targetId,
-            senderId: userId,
-            roomId,
-            signal: { sdp: pc.localDescription }
-          });
+          sendSignal(targetId, { sdp: pc.localDescription });
         }
       } catch (err) {
         console.error("Initial offer error:", err);
@@ -878,7 +1038,6 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     // If peer doesn't exist yet, we might need to create it (e.g. receiving an offer before user-joined)
     if (!peer && signal.sdp && signal.sdp.type === 'offer') {
       console.log(`Received offer for non-existent peer ${senderId}, creating now...`);
-      // We don't have full info yet, but we can create a placeholder
       await createPeer(senderId, 'Unknown', 'User', undefined, false);
       peer = peersRef.current.get(senderId);
     }
@@ -887,26 +1046,30 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     try {
       if (signal.sdp) {
-        console.log(`Received SDP ${signal.sdp.type} from ${senderId}`);
+        console.log(`Received SDP ${signal.sdp.type} from ${senderId}, signalingState: ${peer.connection.signalingState}`);
         
-        // Handle collision (glare)
-        if (signal.sdp.type === 'offer' && peer.connection.signalingState !== 'stable') {
-          console.log("SDP Offer collision detected, ignoring incoming offer");
-          return;
+        // Perfect Negotiation pattern: handle glare (offer collision)
+        // If we receive an offer while not in stable state, decide based on polite flag
+        if (signal.sdp.type === 'offer') {
+          if (peer.connection.signalingState !== 'stable' && !peer.polite) {
+            // Impolite peer ignores offer during collision
+            console.log(`Offer collision: impolite peer ${senderId} ignoring incoming offer`);
+            return;
+          }
+          // Polite peer accepts and rolls back if needed
+          if (peer.connection.signalingState === 'have-local-offer') {
+            console.log(`Offer collision: polite peer ${senderId} rolling back local offer`);
+            await peer.connection.setLocalDescription({ type: 'rollback' } as any);
+          }
         }
 
         await peer.connection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        
         if (signal.sdp.type === 'offer') {
           const answer = await peer.connection.createAnswer();
           await peer.connection.setLocalDescription(answer);
           if (roomId) {
-            sendToFirebase({
-              type: 'signal',
-              targetId: senderId,
-              senderId: userId,
-              roomId,
-              signal: { sdp: peer.connection.localDescription }
-            });
+            sendSignal(senderId, { sdp: peer.connection.localDescription });
           }
         }
       } else if (signal.candidate) {
@@ -1130,9 +1293,8 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
 const claimOwnership = (code: string) => {
     if (!roomId) return;
-    sendToFirebase({
+    sendState({
       type: 'claim-ownership',
-      roomId,
       ownerKey: code
     });
   };
