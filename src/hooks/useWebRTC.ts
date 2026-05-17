@@ -16,6 +16,9 @@ export interface Peer {
   polite?: boolean;
   ignoreOffer?: boolean;
   makingOffer?: boolean;
+  makingOfferRef?: React.MutableRefObject<boolean>;
+  ignoreOfferRef?: React.MutableRefObject<boolean>;
+  iceRestartAttemptsRef?: React.MutableRefObject<number>;
 }
 
 export interface ChatMessage {
@@ -235,6 +238,23 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
   const [incomingCall, setIncomingCall] = useState<{ callerId: string; callerDisplayName: string; callerAvatar?: string; roomId: string } | null>(null);
   const joinedAtRef = useRef<number | null>(null);
   const ownerIdRef = useRef<string | null>(null);
+  
+  // Refs to prevent stale closures and ensure latest state
+  const localStreamReadyRef = useRef(false);
+  const roomInfoReadyRef = useRef(false);
+  const isOwnerRef = useRef(false);
+  
+  useEffect(() => {
+    localStreamReadyRef.current = !!localStream;
+  }, [localStream]);
+  
+  useEffect(() => {
+    roomInfoReadyRef.current = hasRoomInfo;
+  }, [hasRoomInfo]);
+  
+  useEffect(() => {
+    isOwnerRef.current = isOwner;
+  }, [isOwner]);
 
   const attemptJoin = async (isOwner: boolean, initialRoomTag?: string) => {
     if (!roomId) {
@@ -537,9 +557,16 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       if (!user || user.userId === userId) return;
       if (peersRef.current.has(user.userId)) return;
 
+      // Ensure stream and room info are ready before creating peer
+      if (!localStreamReadyRef.current || !roomInfoReadyRef.current) {
+        console.log(`Deferring peer creation for ${user.userId}: stream=${localStreamReadyRef.current}, roomInfo=${roomInfoReadyRef.current}`);
+        queuePeerRequest(user.userId, user.username, user.displayName, user.avatar, false);
+        return;
+      }
+
       const isInitiator = (() => {
-        if (isOwner && !user.isOwner) return true;
-        if (!isOwner && user.isOwner) return false;
+        if (isOwnerRef.current && !user.isOwner) return true;
+        if (!isOwnerRef.current && user.isOwner) return false;
         if (joinedAtRef.current && user.joinedAt) {
           if (joinedAtRef.current !== user.joinedAt) {
             return joinedAtRef.current < user.joinedAt;
@@ -561,13 +588,25 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     const handleExistingUsers = async ({ users }: any) => {
       if (!Array.isArray(users)) return;
+      
+      // Ensure stream and room info are ready before creating peers
+      if (!localStreamReadyRef.current || !roomInfoReadyRef.current) {
+        console.log(`Deferring existing users processing: stream=${localStreamReadyRef.current}, roomInfo=${roomInfoReadyRef.current}`);
+        for (const user of users) {
+          if (!user || user.userId === userId) continue;
+          if (peersRef.current.has(user.userId)) continue;
+          queuePeerRequest(user.userId, user.username, user.displayName, user.avatar, false);
+        }
+        return;
+      }
+
       for (const user of users) {
         if (!user || user.userId === userId) continue;
         if (peersRef.current.has(user.userId)) continue;
 
         const isInitiator = (() => {
-          if (isOwner && !user.isOwner) return true;
-          if (!isOwner && user.isOwner) return false;
+          if (isOwnerRef.current && !user.isOwner) return true;
+          if (!isOwnerRef.current && user.isOwner) return false;
           if (joinedAtRef.current && user.joinedAt) {
             if (joinedAtRef.current !== user.joinedAt) {
               return joinedAtRef.current < user.joinedAt;
@@ -925,9 +964,9 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     }
 
     const pc = new RTCPeerConnection(iceServers);
-    let makingOffer = false;
-    let ignoreOffer = false;
-    let iceRestartAttempts = 0;
+    const makingOfferRef = { current: false };
+    const ignoreOfferRef = { current: false };
+    const iceRestartAttemptsRef = { current: 0 };
     const MAX_ICE_RESTARTS = 2;
 
     const peer: Peer = {
@@ -939,9 +978,12 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       isMuted: initialMicOn === false,
       camOn: initialCamOn ?? true,
       micOn: initialMicOn ?? true,
-      polite: !isInitiator, // Polite peer accepts offer collision; initiator is impolite
+      polite: !isInitiator,
       ignoreOffer: false,
-      makingOffer: false
+      makingOffer: false,
+      makingOfferRef,
+      ignoreOfferRef,
+      iceRestartAttemptsRef
     };
 
     pc.onicecandidate = (event) => {
@@ -952,14 +994,14 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     pc.onnegotiationneeded = async () => {
       try {
-        if (makingOffer) return; // Prevent simultaneous offers
+        if (makingOfferRef.current) return;
         if (pc.signalingState !== 'stable') return;
         
-        makingOffer = true;
+        makingOfferRef.current = true;
         console.log(`Negotiation needed for ${targetId}`);
         const offer = await pc.createOffer();
         if (pc.signalingState !== 'stable') {
-          makingOffer = false;
+          makingOfferRef.current = false;
           return;
         }
         await pc.setLocalDescription(offer);
@@ -969,7 +1011,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       } catch (err) {
         console.error("Negotiation error:", err);
       } finally {
-        makingOffer = false;
+        makingOfferRef.current = false;
       }
     };
 
@@ -991,9 +1033,9 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
     pc.oniceconnectionstatechange = () => {
       console.log(`ICE connection state with ${targetId}: ${pc.iceConnectionState}`);
       if (pc.iceConnectionState === 'failed') {
-        if (iceRestartAttempts < MAX_ICE_RESTARTS) {
-          console.log(`ICE failed with ${targetId}, attempting restart (${iceRestartAttempts + 1}/${MAX_ICE_RESTARTS})...`);
-          iceRestartAttempts++;
+        if (iceRestartAttemptsRef.current < MAX_ICE_RESTARTS) {
+          console.log(`ICE failed with ${targetId}, attempting restart (${iceRestartAttemptsRef.current + 1}/${MAX_ICE_RESTARTS})...`);
+          iceRestartAttemptsRef.current++;
           pc.restartIce();
         } else {
           console.error(`ICE failed too many times with ${targetId}, giving up`);
@@ -1015,7 +1057,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
 
     if (isInitiator) {
       try {
-        makingOffer = true;
+        makingOfferRef.current = true;
         console.log(`Initiating call to ${targetId}`);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -1025,7 +1067,7 @@ export function useWebRTC(roomId: string, userId: string, username: string, disp
       } catch (err) {
         console.error("Initial offer error:", err);
       } finally {
-        makingOffer = false;
+        makingOfferRef.current = false;
       }
     }
 

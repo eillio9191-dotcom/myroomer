@@ -1,24 +1,30 @@
-import { RoomManager } from "../managers/roomManager.js";
-import { SocketManager } from "../managers/socketManager.js";
-import { safeSend } from "../utils/safeSend.js";
+import { Socket } from "socket.io";
 
-export function handleChat(ws: any, msg: any, roomManager: RoomManager, socketManager: SocketManager) {
-  const { text, senderId, username, displayName, avatar, timestamp } = msg;
-  const meta = socketManager.getSocketMeta(ws);
-  if (!meta) return;
+export function handleChat(socket: Socket, payload: any, io: any) {
+  const { roomId, message } = payload;
+  
+  if (!roomId || !message) {
+    console.error("Invalid chat payload:", payload);
+    return;
+  }
 
-  const sockets = roomManager.getSockets(meta.roomId);
-  if (!sockets) return;
+  const { text, senderId, username, displayName, avatar, timestamp } = message;
 
-  sockets.forEach(client => {
-    safeSend(client, {
-      type: "chat",
-      text,
-      senderId,
-      username,
-      displayName,
-      avatar,
-      timestamp
-    });
+  if (!text || !senderId) {
+    console.error("Invalid chat message:", message);
+    return;
+  }
+
+  // Broadcast to all users in the room
+  io.to(roomId).emit('chat', {
+    id: `${senderId}-${timestamp}-${Math.random().toString(36).substr(2, 9)}`,
+    text,
+    senderId,
+    username: username || 'Unknown',
+    displayName: displayName || 'User',
+    avatar: avatar || undefined,
+    timestamp: timestamp || Date.now()
   });
+
+  console.log(`Chat message from ${senderId} in room ${roomId}: ${text}`);
 }
